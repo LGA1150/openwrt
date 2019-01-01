@@ -229,6 +229,19 @@
 			status = "disabled";
 		};
 
+		crypto: crypto@4000 {
+			compatible = "ralink,mt7628an-aes", "mediatek,mtk-aes";
+			reg = <0x4000 0x1000>;
+
+			interrupt-parent = <&intc>;
+			interrupts = <13>;
+
+			resets = <&rstctrl 29>;
+			reset-names = "cryp";
+			clocks = <&clkctrl 29>;
+			clock-names = "cryp";
+		};
+
 		pwm: pwm@5000 {
 			compatible = "mediatek,mt7628-pwm";
 			reg = <0x5000 0x1000>;
