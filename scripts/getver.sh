@@ -37,7 +37,7 @@ try_git() {
 		fi
 
 		if [ "$REV" -gt "$UPSTREAM_REV" ]; then
-			REV="${UPSTREAM_REV}+$((REV - UPSTREAM_REV))"
+			REV="$UPSTREAM_REV"
 		fi
 
 		REV="${REV:+r$REV-$(git log -n 1 --format="%h" $UPSTREAM_BASE)}"
