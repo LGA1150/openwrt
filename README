@@ -1,3 +1,10 @@
+WARNING: THIS BRANCH IS FOR BACKUP ONLY, IT WILL BE OVERWRITTEN BY `git push -f'
+If one has cloned this repo, use `git pull --rebase' instead of `git pull' to sync.
+In case of merging conflicts, simply drop the commit with `git rebase --skip'.
+In case of leftover commits (that got removed after a force-push), issue `git rebase -i origin/HEAD'
+and remove the leftover commits.
+
+
   _______                     ________        __
  |       |.-----.-----.-----.|  |  |  |.----.|  |_
  |   -   ||  _  |  -__|     ||  |  |  ||   _||   _|
