@@ -1,0 +1,16 @@
+#!/bin/sh /etc/rc.common
+#
+# Copyright (C) 2017 nanpuyue <nanpuyue@gmail.com>, https://blog.nanpuyue.com
+#
+
+START=95
+
+SERVICE_USE_PID=1
+
+start() {
+    service_start /usr/bin/sniproxy -c /etc/sniproxy.conf
+}
+
+stop() {
+    service_stop /usr/bin/sniproxy
+}
