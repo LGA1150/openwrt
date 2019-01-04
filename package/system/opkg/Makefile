@@ -91,6 +91,13 @@ define Package/opkg/install
   ifneq ($(CONFIG_SIGNATURE_CHECK),)
 	echo "option check_signature" >> $(1)/etc/opkg.conf
   endif
+  ifeq ($(PKGARCH),arm_cortex-a9_neon)
+	echo "arch all 1" >> $(1)/etc/opkg.conf
+	echo "arch noarch 1" >> $(1)/etc/opkg.conf
+	echo "arch arm_cortex-a9_neon 10" >> $(1)/etc/opkg.conf
+	echo "arch arm_cortex-a9_vfpv3 11" >> $(1)/etc/opkg.conf
+	echo "arch arm_cortex-a9 12" >> $(1)/etc/opkg.conf
+  endif
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_BIN) ./files/opkg-key $(1)/usr/sbin/
 endef
