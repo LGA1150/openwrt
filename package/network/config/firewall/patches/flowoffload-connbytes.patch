@@ -1,0 +1,16 @@
+--- a/defaults.c
++++ b/defaults.c
+@@ -269,6 +269,13 @@ fw3_print_default_head_rules(struct fw3_
+ 			r = fw3_ipt_rule_new(handle);
+ 			fw3_ipt_rule_comment(r, "Traffic offloading");
+ 			fw3_ipt_rule_extra(r, "-m conntrack --ctstate RELATED,ESTABLISHED");
++			if (access("/usr/lib/iptables/libxt_connbytes.so", 0) == 0)
++			{
++				fw3_ipt_rule_addarg(r, false, "-m", "connbytes");
++				fw3_ipt_rule_addarg(r, false, "--connbytes", "16:128");
++				fw3_ipt_rule_addarg(r, false, "--connbytes-mode", "packets");
++				fw3_ipt_rule_addarg(r, false, "--connbytes-dir", "both");
++			}
+ 			fw3_ipt_rule_target(r, "FLOWOFFLOAD");
+ 			if (defs->flow_offloading_hw)
+ 				fw3_ipt_rule_addarg(r, false, "--hw", NULL);
