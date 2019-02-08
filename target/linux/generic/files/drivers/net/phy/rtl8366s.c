@@ -80,6 +80,24 @@
 #define RTL8366S_PHY_POWER_SAVING_CTRL_REG	12
 #define RTL8366S_PHY_POWER_SAVING_MASK		0x1000
 
+/* Port mirror configuration */
+#define RTL8366S_PORT_MIRROR_REG			0x0007
+#define RTL8366S_PORT_MIRROR_SOURCE_BIT			0
+#define RTL8366S_PORT_MIRROR_SOURCE_MSK			0x0007
+#define RTL8366S_PORT_MIRROR_MINITOR_BIT		4
+#define RTL8366S_PORT_MIRROR_MINITOR_MSK		0x0070
+#define RTL8366S_PORT_MIRROR_RX_BIT			8
+#define RTL8366S_PORT_MIRROR_RX_MSK			0x0100
+#define RTL8366S_PORT_MIRROR_TX_BIT			9
+#define RTL8366S_PORT_MIRROR_TX_MSK			0x0200
+#define RTL8366S_PORT_MIRROR_ISO_BIT			11
+#define RTL8366S_PORT_MIRROR_ISO_MSK			0x0800
+
+/* RMA register address */
+#define RTL8366S_RMA_CONTROL_REG		0x0391
+#define RTL8366S_RMA_IGMP_BIT			10
+#define RTL8366S_RMA_MLD_BIT			11
+
 /* LED control registers */
 #define RTL8366S_LED_BLINKRATE_REG		0x0420
 #define RTL8366S_LED_BLINKRATE_BIT		0
@@ -830,6 +848,102 @@ static int rtl8366s_sw_set_learning_enable(struct switch_dev *dev,
 	return 0;
 }
 
+static int rtl8366s_sw_get_mirror_rx_enable(struct switch_dev *dev,
+					   const struct switch_attr *attr,
+					   struct switch_val *val)
+{
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+	u32 data;
+	rtl8366_smi_read_reg(smi, RTL8366S_PORT_MIRROR_REG, &data);
+	val->value.i = !!(data & RTL8366S_PORT_MIRROR_RX_MSK);
+
+	return 0;
+}
+
+static int rtl8366s_sw_set_mirror_rx_enable(struct switch_dev *dev,
+					   const struct switch_attr *attr,
+					   struct switch_val *val)
+{
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+	int err;
+	REG_RMW(smi, RTL8366S_PORT_MIRROR_REG, RTL8366S_PORT_MIRROR_RX_MSK,
+		val->value.i << RTL8366S_PORT_MIRROR_RX_BIT);
+
+	return 0;
+}
+
+static int rtl8366s_sw_get_mirror_tx_enable(struct switch_dev *dev,
+					   const struct switch_attr *attr,
+					   struct switch_val *val)
+{
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+	u32 data;
+	rtl8366_smi_read_reg(smi, RTL8366S_PORT_MIRROR_REG, &data);
+	val->value.i = !!(data & RTL8366S_PORT_MIRROR_TX_MSK);
+
+	return 0;
+}
+
+static int rtl8366s_sw_set_mirror_tx_enable(struct switch_dev *dev,
+					   const struct switch_attr *attr,
+					   struct switch_val *val)
+{
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+	int err;
+	REG_RMW(smi, RTL8366S_PORT_MIRROR_REG, RTL8366S_PORT_MIRROR_TX_MSK,
+		val->value.i << RTL8366S_PORT_MIRROR_TX_BIT);
+
+	return 0;
+}
+
+static int rtl8366s_sw_get_mirror_monitor_port(struct switch_dev *dev,
+					   const struct switch_attr *attr,
+					   struct switch_val *val)
+{
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+	u32 data;
+	rtl8366_smi_read_reg(smi, RTL8366S_PORT_MIRROR_REG, &data);
+	val->value.i = (data & RTL8366S_PORT_MIRROR_MINITOR_MSK) >> RTL8366S_PORT_MIRROR_MINITOR_BIT;
+
+	return 0;
+}
+
+static int rtl8366s_sw_set_mirror_monitor_port(struct switch_dev *dev,
+					   const struct switch_attr *attr,
+					   struct switch_val *val)
+{
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+	int err;
+	REG_RMW(smi, RTL8366S_PORT_MIRROR_REG, RTL8366S_PORT_MIRROR_MINITOR_MSK,
+		val->value.i << RTL8366S_PORT_MIRROR_MINITOR_BIT);
+
+	return 0;
+}
+
+static int rtl8366s_sw_get_mirror_source_port(struct switch_dev *dev,
+					   const struct switch_attr *attr,
+					   struct switch_val *val)
+{
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+	u32 data;
+	rtl8366_smi_read_reg(smi, RTL8366S_PORT_MIRROR_REG, &data);
+	val->value.i = (data & RTL8366S_PORT_MIRROR_SOURCE_MSK) >> RTL8366S_PORT_MIRROR_SOURCE_BIT;
+
+	return 0;
+}
+
+static int rtl8366s_sw_set_mirror_source_port(struct switch_dev *dev,
+					   const struct switch_attr *attr,
+					   struct switch_val *val)
+{
+	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
+	int err;
+	REG_RMW(smi, RTL8366S_PORT_MIRROR_REG, RTL8366S_PORT_MIRROR_SOURCE_MSK,
+		val->value.i << RTL8366S_PORT_MIRROR_SOURCE_BIT);
+
+	return 0;
+}
+
 static int rtl8366s_sw_get_green(struct switch_dev *dev,
 			      const struct switch_attr *attr,
 			      struct switch_val *val)
@@ -1044,6 +1158,34 @@ static struct switch_attr rtl8366s_globals[] = {
 		.set = rtl8366s_sw_set_green,
 		.get = rtl8366s_sw_get_green,
 		.max = 1,
+	}, {
+		.type = SWITCH_TYPE_INT,
+		.name = "enable_mirror_rx",
+		.description = "Enable mirroring of RX packets",
+		.set = rtl8366s_sw_set_mirror_rx_enable,
+		.get = rtl8366s_sw_get_mirror_rx_enable,
+		.max = 1
+	}, {
+		.type = SWITCH_TYPE_INT,
+		.name = "enable_mirror_tx",
+		.description = "Enable mirroring of TX packets",
+		.set = rtl8366s_sw_set_mirror_tx_enable,
+		.get = rtl8366s_sw_get_mirror_tx_enable,
+		.max = 1
+	}, {
+		.type = SWITCH_TYPE_INT,
+		.name = "mirror_monitor_port",
+		.description = "Mirror monitor port",
+		.set = rtl8366s_sw_set_mirror_monitor_port,
+		.get = rtl8366s_sw_get_mirror_monitor_port,
+		.max = RTL8366S_NUM_PORTS - 1
+	}, {
+		.type = SWITCH_TYPE_INT,
+		.name = "mirror_source_port",
+		.description = "Mirror source port",
+		.set = rtl8366s_sw_set_mirror_source_port,
+		.get = rtl8366s_sw_get_mirror_source_port,
+		.max = RTL8366S_NUM_PORTS - 1
 	},
 };
 
