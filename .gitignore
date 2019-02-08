@@ -32,3 +32,5 @@ git-src
 .cproject
 .ccache
 .vscode*
+/*.config
+/*.patch
