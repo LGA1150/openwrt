@@ -1,16 +1,17 @@
-WARNING: THIS BRANCH IS FOR BACKUP ONLY, IT WILL BE OVERWRITTEN BY `git push -f'
-If one has cloned this repo, use `git pull --rebase' instead of `git pull' to sync.
-In case of merging conflicts, simply drop the commit with `git rebase --skip'.
-In case of leftover commits (that got removed after a force-push), issue `git rebase -i origin/HEAD'
+WARNING: THIS BRANCH IS FOR BACKUP ONLY, IT WILL BE OVERWRITTEN BY `git push -f`  
+If one has cloned this repo, use `git pull --rebase` instead of `git pull` to sync.  
+In case of merging conflicts, simply drop the commit with `git rebase --skip`.  
+In case of leftover commits (that got removed after a force-push), issue `git rebase -i origin/HEAD` 
 and remove the leftover commits.
 
-
+```
   _______                     ________        __
  |       |.-----.-----.-----.|  |  |  |.----.|  |_
  |   -   ||  _  |  -__|     ||  |  |  ||   _||   _|
  |_______||   __|_____|__|__||________||__|  |____|
           |__| W I R E L E S S   F R E E D O M
  -----------------------------------------------------
+```
 
 This is the buildsystem for the OpenWrt Linux distribution.
 
@@ -21,21 +22,19 @@ of a case sensitive file system.
 You need gcc, binutils, bzip2, flex, python3.5+, perl, make, find, grep, diff,
 unzip, gawk, getopt, subversion, libz-dev and libc headers installed.
 
-1. Run "./scripts/feeds update -a" to obtain all the latest package definitions
+1. Run `./scripts/feeds update -a` to obtain all the latest package definitions
 defined in feeds.conf / feeds.conf.default
 
-2. Run "./scripts/feeds install -a" to install symlinks for all obtained
+2. Run `./scripts/feeds install -a` to install symlinks for all obtained
 packages into package/feeds/
 
-3. Run "make menuconfig" to select your preferred configuration for the
+3. Run `make menuconfig` to select your preferred configuration for the
 toolchain, target system & firmware packages.
 
-4. Run "make" to build your firmware. This will download all sources, build
+4. Run `make` to build your firmware. This will download all sources, build
 the cross-compile toolchain and then cross-compile the Linux kernel & all
 chosen applications for your target system.
 
-Sunshine!
+Sunshine!  
 	Your OpenWrt Community
 	http://www.openwrt.org
-
-
