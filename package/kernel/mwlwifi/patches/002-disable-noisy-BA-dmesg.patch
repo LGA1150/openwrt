@@ -1,0 +1,22 @@
+--- a/hif/pcie/pcie.c
++++ b/hif/pcie/pcie.c
+@@ -554,7 +554,6 @@ static void pcie_timer_routine(struct ie
+ 	if (ba_full && rm_stream) {
+ 		ieee80211_stop_tx_ba_session(rm_stream->sta,
+ 					     rm_stream->tid);
+-		wiphy_debug(hw->wiphy, "Stop BA %pM\n", rm_stream->sta->addr);
+ 	}
+ 	spin_unlock_bh(&priv->stream_lock);
+ }
+--- a/hif/pcie/tx.c
++++ b/hif/pcie/tx.c
+@@ -1238,9 +1238,6 @@ void pcie_tx_xmit(struct ieee80211_hw *h
+ 		rc = mwl_fwcmd_start_stream(hw, stream);
+ 		if (rc)
+ 			mwl_fwcmd_remove_stream(hw, stream);
+-		else
+-			wiphy_debug(hw->wiphy, "Mac80211 start BA %pM\n",
+-				    stream->sta->addr);
+ 		spin_unlock_bh(&priv->stream_lock);
+ 	}
+ }
