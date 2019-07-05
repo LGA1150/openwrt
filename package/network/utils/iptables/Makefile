@@ -209,6 +209,19 @@ iptables extensions for matching ipsec traffic.
 
 endef
 
+define Package/iptables-mod-ipvs
+$(call Package/iptables/Module, +kmod-nf-ipvs)
+  TITLE:=IPVS extensions
+endef
+
+define Package/iptables-mod-ipvs/description
+iptables extensions for matching ipvs traffic.
+
+ Matches:
+  - ipvs
+
+endef
+
 define Package/iptables-mod-nat-extra
 $(call Package/iptables/Module, +kmod-ipt-nat-extra)
   TITLE:=Extra NAT extensions
@@ -680,6 +693,7 @@ $(eval $(call BuildPlugin,iptables-mod-physdev,$(IPT_PHYSDEV-m)))
 $(eval $(call BuildPlugin,iptables-mod-filter,$(IPT_FILTER-m)))
 $(eval $(call BuildPlugin,iptables-mod-ipopt,$(IPT_IPOPT-m)))
 $(eval $(call BuildPlugin,iptables-mod-ipsec,$(IPT_IPSEC-m)))
+$(eval $(call BuildPlugin,iptables-mod-ipvs,$(IPT_IPVS-m)))
 $(eval $(call BuildPlugin,iptables-mod-nat-extra,$(IPT_NAT_EXTRA-m)))
 $(eval $(call BuildPlugin,iptables-mod-iprange,$(IPT_IPRANGE-m)))
 $(eval $(call BuildPlugin,iptables-mod-cluster,$(IPT_CLUSTER-m)))
