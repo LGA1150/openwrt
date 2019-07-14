@@ -28,12 +28,29 @@
 };
 
 &pinctrl {
+	sdxc_router_pins: sdxc_router_mode {
+		gpio {
+			ralink,group = "i2s", "sdmode", "uart1", "gpio";
+			ralink,function = "gpio";
+		};
+
+		esdmode {
+			ralink,group = "esdmode";
+			ralink,function = "sdxc";
+		};
+	};
+
 	state_default: pinctrl0 {
 		gpio {
 			ralink,group = "i2c", "refclk", "wdt", "wled_an";
 			ralink,function = "gpio";
 		};
 	};
+};
+
+&sdhci {
+	status = "okay";
+	pinctrl-0 = <&sdxc_router_pins>;
 };
 
 &ehci {
