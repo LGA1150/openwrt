@@ -71,7 +71,7 @@
 			};
 
 			partition@30000 {
-				label = "u-boot-env";
+				label = "hw_panic";
 				reg = <0x30000 0x10000>;
 				read-only;
 			};
