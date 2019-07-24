@@ -241,7 +241,7 @@ define KernelPackage/mt7603/install
 		$(PKG_BUILD_DIR)/firmware/mt7628_e2.bin \
 		,\
 		$(PKG_BUILD_DIR)/firmware/mt7603_e1.bin \
-		$(PKG_BUILD_DIR)/firmware/mt7603_e2.bin \
+		./mt7603_e2.bin \
 		) \
 		$(1)/lib/firmware
 endef
