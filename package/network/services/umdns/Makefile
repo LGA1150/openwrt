@@ -32,6 +32,10 @@ endef
 
 TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include
 
+ifdef CONFIG_GCC_USE_VERSION_9
+	TARGET_CFLAGS += -Wno-error=address-of-packed-member
+endif
+
 define Package/umdns/conffiles
 /etc/config/umdns
 endef
