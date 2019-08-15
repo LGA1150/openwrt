@@ -137,19 +137,30 @@
 
 #define RTL8367B_CHIP_DEBUG1_REG		0x1304
 
+/* extif2 setup register */
+#define RTL8367B_CHIP_DEBUG2_REG		0x13e2
+
 #define RTL8367B_DIS_REG			0x1305
 #define   RTL8367B_DIS_SKIP_MII_RXER(_x)	BIT(12 + (_x))
 #define   RTL8367B_DIS_RGMII_SHIFT(_x)		(4 * (_x))
 #define   RTL8367B_DIS_RGMII_MASK		0x7
 
-#define RTL8367B_EXT_RGMXF_REG(_x)		(0x1306 + (_x))
+/* extif2 digital interface select */
+#define RTL8367B_DIS2_REG			0x13c3
+#define    RTL8367B_DIS2_SKIP_MII_RXER_SHIFT    4
+#define    RTL8367B_DIS2_SKIP_MII_RXER    0x10
+#define    RTL8367B_DIS2_RGMII_SHIFT    0
+#define    RTL8367B_DIS2_RGMII_MASK    0xF
+/* extif2 delay config register == 0x13c5 */
+#define RTL8367B_EXT_RGMXF_REG(_x)		((_x) == 2 ? 0x13c5 : 0x1306 + (_x))
 #define   RTL8367B_EXT_RGMXF_DUMMY0_SHIFT	5
 #define   RTL8367B_EXT_RGMXF_DUMMY0_MASK	0x7ff
 #define   RTL8367B_EXT_RGMXF_TXDELAY_SHIFT	3
 #define   RTL8367B_EXT_RGMXF_TXDELAY_MASK	1
 #define   RTL8367B_EXT_RGMXF_RXDELAY_MASK	0x7
 
-#define RTL8367B_DI_FORCE_REG(_x)		(0x1310 + (_x))
+/* extif2 digital interface force register == 0x13c4 */
+#define RTL8367B_DI_FORCE_REG(_x)		((_x) == 2 ? 0x13c4 : 0x1310 + (_x))
 #define   RTL8367B_DI_FORCE_MODE		BIT(12)
 #define   RTL8367B_DI_FORCE_NWAY		BIT(7)
 #define   RTL8367B_DI_FORCE_TXPAUSE		BIT(6)
@@ -754,8 +765,9 @@ static int rtl8367b_extif_set_mode(struct rtl8366_smi *smi, int id,
 	switch (mode) {
 	case RTL8367_EXTIF_MODE_RGMII:
 	case RTL8367_EXTIF_MODE_RGMII_33V:
-		REG_WR(smi, RTL8367B_CHIP_DEBUG0_REG, 0x0367);
+		REG_WR(smi, RTL8367B_CHIP_DEBUG0_REG, 0x0767);
 		REG_WR(smi, RTL8367B_CHIP_DEBUG1_REG, 0x7777);
+		REG_WR(smi, RTL8367B_CHIP_DEBUG2_REG, 0x01fd);
 		break;
 
 	case RTL8367_EXTIF_MODE_TMII_MAC:
@@ -785,9 +797,14 @@ static int rtl8367b_extif_set_mode(struct rtl8366_smi *smi, int id,
 		return -EINVAL;
 	}
 
-	REG_RMW(smi, RTL8367B_DIS_REG,
-		RTL8367B_DIS_RGMII_MASK << RTL8367B_DIS_RGMII_SHIFT(id),
-		mode << RTL8367B_DIS_RGMII_SHIFT(id));
+	if(id < 2)
+		REG_RMW(smi, RTL8367B_DIS_REG,
+			RTL8367B_DIS_RGMII_MASK << RTL8367B_DIS_RGMII_SHIFT(id),
+			mode << RTL8367B_DIS_RGMII_SHIFT(id));
+	else
+		REG_RMW(smi, RTL8367B_DIS2_REG,
+			RTL8367B_DIS2_RGMII_MASK << RTL8367B_DIS2_RGMII_SHIFT,
+			mode << RTL8367B_DIS2_RGMII_SHIFT);
 
 	return 0;
 }
@@ -929,6 +946,10 @@ static int rtl8367b_setup(struct rtl8366_smi *smi)
 			return err;
 
 		err = rtl8367b_extif_init_of(smi, 1, "realtek,extif1");
+		if (err)
+			return err;
+
+		err = rtl8367b_extif_init_of(smi, 2, "realtek,extif2");
 		if (err)
 			return err;
 	} else {
