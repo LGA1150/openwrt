@@ -58,6 +58,14 @@ $(call Package/dnsmasq/Default)
   PROVIDES:=dnsmasq
 endef
 
+define Package/dnsmasq-ipset
+$(call Package/dnsmasq/Default)
+  TITLE += (with IPset support)
+  DEPENDS+=kmod-ipt-ipset
+  VARIANT:=ipset
+  PROVIDES:=dnsmasq
+endef
+
 define Package/dnsmasq-full
 $(call Package/dnsmasq/Default)
   TITLE += (with DNSSEC, DHCPv6, Auth DNS, IPset, Conntrack, NO_ID enabled by default)
@@ -76,6 +84,12 @@ define Package/dnsmasq-dhcpv6/description
 $(call Package/dnsmasq/description)
 
 This is a variant with DHCPv6 support
+endef
+
+define Package/dnsmasq-ipset/description
+$(call Package/dnsmasq/description)
+
+This is a variant with IPset support
 endef
 
 define Package/dnsmasq-full/description
@@ -124,6 +138,7 @@ define Package/dnsmasq-full/config
 endef
 
 Package/dnsmasq-dhcpv6/conffiles = $(Package/dnsmasq/conffiles)
+Package/dnsmasq-ipset/conffiles = $(Package/dnsmasq/conffiles)
 Package/dnsmasq-full/conffiles = $(Package/dnsmasq/conffiles)
 
 TARGET_CFLAGS += -ffunction-sections -fdata-sections
@@ -133,7 +148,15 @@ COPTS = -DHAVE_UBUS \
 	$(if $(CONFIG_IPV6),,-DNO_IPV6)
 
 ifeq ($(BUILD_VARIANT),nodhcpv6)
-	COPTS += -DNO_DHCP6
+	COPTS += -DNO_DHCP6 -DNO_AUTH -DNO_IPSET -DNO_ID
+endif
+
+ifeq ($(BUILD_VARIANT),dhcpv6)
+	COPTS += -DNO_AUTH -DNO_IPSET -DNO_ID
+endif
+
+ifeq ($(BUILD_VARIANT),ipset)
+	COPTS += -DNO_DHCP6 -DNO_AUTH -DNO_ID
 endif
 
 ifeq ($(BUILD_VARIANT),full)
@@ -147,8 +170,6 @@ ifeq ($(BUILD_VARIANT),full)
 		$(if $(CONFIG_PACKAGE_dnsmasq_$(BUILD_VARIANT)_broken_rtc),-DHAVE_BROKEN_RTC) \
 		$(if $(CONFIG_PACKAGE_dnsmasq_$(BUILD_VARIANT)_tftp),,-DNO_TFTP)
 	COPTS += $(if $(CONFIG_LIBNETTLE_MINI),-DNO_GMP,)
-else
-	COPTS += -DNO_AUTH -DNO_IPSET -DNO_ID
 endif
 
 MAKE_FLAGS := \
@@ -181,6 +202,7 @@ define Package/dnsmasq/install
 endef
 
 Package/dnsmasq-dhcpv6/install = $(Package/dnsmasq/install)
+Package/dnsmasq-ipset/install = $(Package/dnsmasq/install)
 
 define Package/dnsmasq-full/install
 $(call Package/dnsmasq/install,$(1))
@@ -192,4 +214,5 @@ endef
 
 $(eval $(call BuildPackage,dnsmasq))
 $(eval $(call BuildPackage,dnsmasq-dhcpv6))
+$(eval $(call BuildPackage,dnsmasq-ipset))
 $(eval $(call BuildPackage,dnsmasq-full))
