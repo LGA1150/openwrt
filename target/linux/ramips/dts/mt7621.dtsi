@@ -71,7 +71,7 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			compatible = "mtk,mt7621-gpio";
+			compatible = "mediatek,mt7621-gpio";
 			reg = <0x600 0x100>;
 
 			interrupt-parent = <&gic>;

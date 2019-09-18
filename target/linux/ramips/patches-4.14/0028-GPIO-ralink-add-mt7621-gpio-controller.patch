@@ -382,7 +382,7 @@ Signed-off-by: John Crispin <blogic@openwrt.org>
 +}
 +
 +static const struct of_device_id mediatek_gpio_match[] = {
-+	{ .compatible = "mtk,mt7621-gpio" },
++	{ .compatible = "mediatek,mt7621-gpio" },
 +	{},
 +};
 +MODULE_DEVICE_TABLE(of, mediatek_gpio_match);
