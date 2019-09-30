@@ -628,6 +628,18 @@ endef
 # Missing DSA Setup
 #TARGET_DEVICES += glinet_gl-s1300
 
+define Device/hiwifi_c526a
+	$(call Device/FitzImage)
+	$(call Device/UbiFit)
+	DEVICE_VENDOR := HiWiFi
+	DEVICE_MODEL := C526A
+	SOC := qcom-ipq4019
+	BLOCKSIZE := 128k
+	PAGESIZE := 2048
+	DEVICE_PACKAGES := ipq-wifi-hiwifi_c526a kmod-mt7615e kmod-mt7615-firmware
+endef
+TARGET_DEVICES += hiwifi_c526a
+
 define Device/kernel-size-6350-8300
 	DEVICE_COMPAT_VERSION := 2.0
 	DEVICE_COMPAT_MESSAGE := Kernel partition size must be increased for \

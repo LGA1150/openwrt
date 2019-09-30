@@ -87,6 +87,7 @@ ipq40xx_setup_interfaces()
 	netgear,rbr50|\
 	netgear,rbs50|\
 	netgear,srr60|\
+	hiwifi,c526a|\
 	netgear,srs60)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" "wan"
 		;;
@@ -191,6 +192,11 @@ ipq40xx_setup_macs()
 	google,wifi)
 		wan_mac=$(get_mac_label)
 		lan_mac=$(macaddr_add "$wan_mac" 1)
+		;;
+	hiwifi,c526a)
+		lan_mac=$(mtd_get_mac_ascii bdinfo "Vfac_mac ")
+		label_mac=$lan_mac
+		wan_mac=$(macaddr_add "$lan_mac" 1)
 		;;
 	linksys,ea6350v3|\
 	linksys,ea8300  |\
