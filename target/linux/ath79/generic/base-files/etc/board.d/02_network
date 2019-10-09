@@ -278,7 +278,8 @@ ath79_setup_interfaces()
 	iodata,wn-ac1600dgr2|\
 	iodata,wn-ag300dgr|\
 	pcs,cr5000|\
-	wd,mynet-n750)
+	wd,mynet-n750|\
+	xwrt,csac)
 		ucidef_add_switch "switch0" \
 			"0@eth0" "1:lan" "2:lan" "3:lan" "4:lan" "5:wan"
 		;;
@@ -683,6 +684,10 @@ ath79_setup_macs()
 		;;
 	xiaomi,aiot-ac2350)
 		lan_mac=$(mtd_get_mac_binary art 0x1002)
+		;;
+	xwrt,csac)
+		wan_mac=$(mtd_get_mac_binary art 0)
+		lan_mac=$(mtd_get_mac_binary art 6)
 		;;
 	zyxel,nbg6616)
 		label_mac=$(mtd_get_mac_ascii u-boot-env ethaddr)
