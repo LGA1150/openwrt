@@ -25,9 +25,8 @@ ipq40xx_setup_interfaces()
 	asus,rt-ac58u|\
 	p2w,r619ac|\
 	zyxel,nbg6617)
-		ucidef_set_interfaces_lan_wan "eth0" "eth1"
 		ucidef_add_switch "switch0" \
-			"0u@eth0" "1:lan:4" "2:lan:3" "3:lan:2" "4:lan:1"
+			"0t@eth0" "1:lan:4" "2:lan:3" "3:lan:2" "4:lan:1" "5:wan"
 		;;
 	avm,fritzbox-4040|\
 	linksys,ea6350v3|\
@@ -60,13 +59,11 @@ ipq40xx_setup_interfaces()
 		;;
 	hiwifi,c526a)
 		ucidef_add_switch "switch0" \
-			"0u@eth0" "2:lan" "3:lan" "4:lan"
-		ucidef_set_interface_wan "eth1"
+			"0t@eth0" "2:lan" "3:lan" "4:lan" "5:wan"
 		;;
 	mobipromo,cm520-79f)
 		ucidef_add_switch "switch0" \
-			"0u@eth0" "3:lan:2" "4:lan:1"
-		ucidef_set_interface_wan "eth1"
+			"0t@eth0" "3:lan:2" "4:lan:1" "5:wan"
 		;;
 	qxwlan,e2600ac-c1 |\
 	qxwlan,e2600ac-c2)
@@ -108,6 +105,8 @@ ipq40xx_setup_macs()
 		wan_mac=$(mtd_get_mac_ascii devinfo hw_mac_addr)
 		lan_mac=$(macaddr_add "$wan_mac" 1)
 		;;
+	*)
+		wan_mac=$(macaddr_add $(cat /sys/class/net/eth0/address) 1)
 	esac
 
 	[ -n "$lan_mac" ] && ucidef_set_interface_macaddr "lan" $lan_mac
