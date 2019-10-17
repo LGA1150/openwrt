@@ -1,0 +1,15 @@
+--- a/pci.c
++++ b/pci.c
+@@ -28,11 +28,7 @@ void mt76_pci_disable_aspm(struct pci_de
+ 		 (aspm_conf & PCI_EXP_LNKCTL_ASPM_L1) ? "L1" : "");
+ 
+ 	if (IS_ENABLED(CONFIG_PCIEASPM)) {
+-		int err;
+-
+-		err = pci_disable_link_state(pdev, aspm_conf);
+-		if (!err)
+-			return;
++		pci_disable_link_state(pdev, aspm_conf);
+ 	}
+ 
+ 	/* both device and parent should have the same ASPM setting.
