@@ -47,6 +47,7 @@ case "$FIRMWARE" in
 	alfa-network,ap120c-ac |\
 	glinet,gl-b1300 |\
 	linksys,ea6350v3 |\
+	mobipromo,cm520-79f |\
 	qcom,ap-dk01.1-c1)
 		caldata_extract "ART" 0x1000 0x2f20
 		;;
@@ -111,6 +112,7 @@ case "$FIRMWARE" in
 	alfa-network,ap120c-ac |\
 	glinet,gl-b1300 |\
 	linksys,ea6350v3 |\
+	mobipromo,cm520-79f |\
 	qcom,ap-dk01.1-c1)
 		caldata_extract "ART" 0x5000 0x2f20
 		;;
