@@ -31,6 +31,10 @@
 	label = "r6220:green:wps";
 };
 
+&bch {
+	status = "okay";
+};
+
 &nand {
 	status = "okay";
 

@@ -70,6 +70,10 @@
 	};
 };
 
+&bch {
+	status = "okay";
+};
+
 &nand {
 	status = "okay";
 
