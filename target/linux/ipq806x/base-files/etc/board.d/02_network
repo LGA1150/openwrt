@@ -12,6 +12,7 @@ board_config_update
 board=$(board_name)
 
 case "$board" in
+ruijie_rg-mtfi-m520 |\
 buffalo,wxr-2533dhp |\
 compex,wpq864 |\
 netgear,d7800 |\

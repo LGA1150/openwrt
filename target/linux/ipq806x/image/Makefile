@@ -310,4 +310,23 @@ define Device/zyxel_nbg6817
 endef
 TARGET_DEVICES += zyxel_nbg6817
 
+define Device/ruijie_rg-mtfi-m520
+	DEVICE_VENDOR := Ruijie
+	DEVICE_MODEL := RG-MTFi-M520
+	DEVICE_DTS := qcom-ipq8064-mtfi-m520
+	KERNEL_SIZE := 4096k
+	BLOCKSIZE := 64k
+	BOARD_NAME := rg-mtfi-m520
+	KERNEL_SUFFIX := -uImage
+	KERNEL = kernel-bin | append-dtb | uImage none | pad-to $${KERNEL_SIZE}
+	KERNEL_NAME := zImage
+	IMAGES := sysupgrade.bin factory.bin mmcblk0p3-rootfs.bin mmcblk0p2-kernel.bin
+	IMAGE/sysupgrade.bin/squashfs := append-rootfs | pad-to $$$${BLOCKSIZE} | sysupgrade-tar rootfs=$$$$@ | append-metadata
+	IMAGE/mmcblk0p2-kernel.bin := append-kernel | pad-to $$$${KERNEL_SIZE}
+	IMAGE/mmcblk0p3-rootfs.bin := append-rootfs | pad-rootfs
+	IMAGE/factory.bin := qsdk-ipq-factory-nor
+	DEVICE_PACKAGES := ath10k-firmware-qca988x-ct e2fsprogs kmod-fs-ext4 losetup
+endef
+TARGET_DEVICES += ruijie_rg-mtfi-m520
+
 $(eval $(call BuildImage))
