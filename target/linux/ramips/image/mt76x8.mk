@@ -832,6 +832,15 @@ define Device/zbtlink_zbt-we1226
 endef
 TARGET_DEVICES += zbtlink_zbt-we1226
 
+define Device/zbtlink_zbt-we2426
+  MTK_SOC := mt7628an
+  IMAGE_SIZE := 16064k
+  DEVICE_VENDOR := Zbtlink
+  DEVICE_MODEL := ZBT-WE2426
+  DEVICE_PACKAGES := kmod-mt76x2 kmod-usb2 kmod-usb-ohci
+endef
+TARGET_DEVICES += zbtlink_zbt-we2426
+
 define Device/zyxel_keenetic-extra-ii
   IMAGE_SIZE := 14912k
   BLOCKSIZE := 64k
