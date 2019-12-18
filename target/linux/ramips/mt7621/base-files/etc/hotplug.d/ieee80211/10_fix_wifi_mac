@@ -39,4 +39,10 @@ case "$board" in
 		[ "$PHYNBR" = "0" ] && macaddr_add $hw_mac_addr 1 > /sys${DEVPATH}/macaddress
 		[ "$PHYNBR" = "1" ] && macaddr_add $hw_mac_addr 2 > /sys${DEVPATH}/macaddress
 		;;
+	jdcloud,re-sp-01b)
+		local index="$(find_mtd_index "config")"
+		local label_mac=$(macaddr_canonicalize $(dd if="/dev/mtd${index}" bs=12 skip=17449 iflag=skip_bytes count=1 2>/dev/null))
+		[ "$PHYNBR" -eq 0 ] && echo $label_mac > /sys${DEVPATH}/macaddress
+		[ "$PHYNBR" -eq 1 ] && macaddr_add $label_mac 0x800000 > /sys${DEVPATH}/macaddress
+		;;
 esac
