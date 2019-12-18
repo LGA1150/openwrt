@@ -144,12 +144,6 @@ ramips_setup_macs()
 		wan_mac=$lan_mac
 		label_mac=$lan_mac
 		;;
-	jdcloud,re-sp-01b)
-		local index="$(find_mtd_index "config")"
-		label_mac=$(macaddr_canonicalize $(dd if="/dev/mtd${index}" bs=12 skip=17449 iflag=skip_bytes count=1 2>/dev/null))
-		lan_mac=$label_mac
-		wan_mac=$label_mac
-		;;
 	mikrotik,routerboard-750gr3|\
 	mikrotik,routerboard-760igs|\
 	mikrotik,routerboard-m11g|\
