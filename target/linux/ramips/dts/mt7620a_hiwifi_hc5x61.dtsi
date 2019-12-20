@@ -6,6 +6,10 @@
 / {
 	compatible = "hiwifi,hc5x61", "ralink,mt7620a-soc";
 
+	aliases {
+		label-mac-device = &ethernet;
+	};
+
 	chosen {
 		bootargs = "console=ttyS0,115200";
 	};
@@ -85,8 +89,7 @@
 };
 
 &ethernet {
-	mtd-mac-address = <&factory 0x4>;
-
+	mtd-mac-address-ascii = <&bdinfo 0x18a>;
 	mediatek,portmap = "wllll";
 };
 
@@ -96,6 +99,7 @@
 
 &wmac {
 	ralink,mtd-eeprom = <&factory 0x0>;
+	mtd-mac-address-ascii = <&bdinfo 0x18a>;
 };
 
 &state_default {
