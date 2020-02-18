@@ -13,6 +13,7 @@
 		led-failsafe = &led_system;
 		led-running = &led_system;
 		led-upgrade = &led_system;
+		label-mac-device = &ethernet;
 	};
 
 	chosen {
@@ -90,9 +91,10 @@
 };
 
 &ethernet {
-	mtd-mac-address = <&factory 0x4>;
+	mtd-mac-address-ascii = <&bdinfo 0x18a>;
 };
 
 &wmac {
 	status = "okay";
+	mtd-mac-address-ascii = <&bdinfo 0x18a>;
 };

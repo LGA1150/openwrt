@@ -43,8 +43,10 @@
 	wifi@0,0 {
 		reg = <0x0000 0 0 0 0>;
 		mediatek,mtd-eeprom = <&factory 0x8000>;
-		mtd-mac-address = <&factory 0x2e>;
 		ieee80211-freq-limit = <5000000 6000000>;
+		mtd-mac-address-ascii = <&bdinfo 0x18a>;
+		mtd-mac-address-increment = <(-4)>;
+		mtd-mac-address-increment-byte = <0>;
 
 		led {
 			led-sources = <2>;
