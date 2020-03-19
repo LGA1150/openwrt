@@ -1,0 +1,1311 @@
+From 2674f623b504cad8c2bc739b1fad3121c9f8b13d Mon Sep 17 00:00:00 2001
+From: Vivien Didelot <vivien.didelot@savoirfairelinux.com>
+Date: Thu, 22 Oct 2015 14:31:23 -0400
+Subject: [PATCH] net: dsa: mv88e6xxx: add debugfs interface
+
+Add a debugfs interface for the mv88e6xxx module.
+
+    # mount -t debugfs none /sys/kernel/debug
+
+The mv88e6xxx directory contains one directory per chip:
+
+    # cd /sys/kernel/debug/mv88e6xxx/
+    # ls
+    sw0  sw1  sw2
+
+Each chip directory contains several entries and one directory per port:
+
+    # ls -p sw0/
+    age_time  device_map  global2  p0/  p2/  p4/  p6/  scratch  stats
+    atu/      global1     name     p1/  p3/  p5/  pvt  serdes   vtu
+    # cat name
+    Marvell 88E6352
+
+You can compare registers set side-by-side with the coreutils "pr" tool:
+
+    # pr -mt sw0/p*/regs
+    Port 0.0  Port 0.1  Port 0.2  Port 0.3  Port 0.4  Port 0.5  Port 0.6
+     0: 5d0f   0: 5d0f   0: 5d0f   0: 500f   0: 500f   0: 4e07   0: 4d04
+     1:    3   1:    3   1:    3   1:    3   1:    3   1: 403e   1:   3d
+     2:    0   2:    0   2:    0   2:    0   2:    0   2:    0   2:    0
+     3: 3521   3: 3521   3: 3521   3: 3521   3: 3521   3: 3521   3: 3521
+[...]
+    1c:    0  1c:    0  1c:    0  1c:    0  1c:    0  1c:    0  1c:    0
+    1d:    0  1d:    0  1d:    0  1d:    0  1d:    0  1d:    0  1d:    0
+    1e:    0  1e:    0  1e:    0  1e:    0  1e:    0  1e:    0  1e:    0
+    1f:    0  1f:    0  1f:    0  1f:    0  1f:    0  1f:    0  1f:    0
+
+Or even registers set from multiple chips:
+
+    # pr -mt */global1
+    Global1@0               Global1@1               Global1@2
+     0: c800                 0: c800                 0: c800
+     1:    0                 1:    0                 1: 9699
+     2:    0                 2:    0                 2: c6ba
+[...]
+    1d: 1000                1d: 1000                1d: 1000
+    1e:    0                1e:    0                1e:    0
+    1f:    0                1f:    0                1f:    0
+
+The ATU is quite big. Dump it all, or only individual FIDs with:
+
+    # cat */atu/{1,2} | grep -v FID
+       0  00:0a:e4:ea:19:c6       Age 7 (newest)       n  - - 2 - - - -
+
+Signed-off-by: Vivien Didelot <vivien.didelot@savoirfairelinux.com>
+---
+ drivers/net/dsa/mv88e6xxx/chip.c    |   13 +
+ drivers/net/dsa/mv88e6xxx/chip.h    |    2 +
+ drivers/net/dsa/mv88e6xxx/debugfs.c | 1165 +++++++++++++++++++++++++++
+ drivers/net/dsa/mv88e6xxx/global2.c |   17 +
+ 4 files changed, 1197 insertions(+)
+ create mode 100644 drivers/net/dsa/mv88e6xxx/debugfs.c
+
+--- a/drivers/net/dsa/mv88e6xxx/chip.c
++++ b/drivers/net/dsa/mv88e6xxx/chip.c
+@@ -2688,6 +2688,8 @@ static int mv88e6390_setup_errata(struct
+ 	return mv88e6xxx_software_reset(chip);
+ }
+ 
++#include "debugfs.c"
++
+ static int mv88e6xxx_setup(struct dsa_switch *ds)
+ {
+ 	struct mv88e6xxx_chip *chip = ds->priv;
+@@ -2695,6 +2697,8 @@ static int mv88e6xxx_setup(struct dsa_sw
+ 	int err;
+ 	int i;
+ 
++	err = mv88e6xxx_dbg_init_module();
++
+ 	chip->ds = ds;
+ 	ds->slave_mii_bus = mv88e6xxx_default_mdio_bus(chip);
+ 	ds->configure_vlan_while_not_filtering = true;
+@@ -2802,6 +2806,7 @@ static int mv88e6xxx_setup(struct dsa_sw
+ 	if (err)
+ 		goto unlock;
+ 
++	err = mv88e6xxx_dbg_init_chip(chip);
+ unlock:
+ 	mv88e6xxx_reg_unlock(chip);
+ 
+@@ -5304,11 +5309,13 @@ static void mv88e6xxx_remove(struct mdio
+ 	struct dsa_switch *ds = dev_get_drvdata(&mdiodev->dev);
+ 	struct mv88e6xxx_chip *chip = ds->priv;
+ 
++	mv88e6xxx_dbg_destroy_module();
++
+ 	if (chip->info->ptp_support) {
+ 		mv88e6xxx_hwtstamp_free(chip);
+ 		mv88e6xxx_ptp_free(chip);
+ 	}
+-
++	mv88e6xxx_dbg_destroy_chip(chip);
+ 	mv88e6xxx_phy_destroy(chip);
+ 	mv88e6xxx_unregister_switch(chip);
+ 	mv88e6xxx_mdios_unregister(chip);
+--- a/drivers/net/dsa/mv88e6xxx/chip.h
++++ b/drivers/net/dsa/mv88e6xxx/chip.h
+@@ -238,6 +238,8 @@ struct mv88e6xxx_port {
+ };
+ 
+ struct mv88e6xxx_chip {
++	struct dentry *debugfs_dir;
++
+ 	const struct mv88e6xxx_info *info;
+ 
+ 	/* The dsa_switch this private structure is related to */
+--- /dev/null
++++ b/drivers/net/dsa/mv88e6xxx/debugfs.c
+@@ -0,0 +1,1165 @@
++#include <linux/bitfield.h>
++#include <linux/debugfs.h>
++#include <linux/seq_file.h>
++
++/* mv88e6xxx module debugfs directory */
++static struct dentry *mv88e6xxx_dbg_dir;
++
++struct mv88e6xxx_dbg_ops {
++	int (*read)(struct mv88e6xxx_chip *chip, int id, struct seq_file *seq);
++	int (*write)(struct mv88e6xxx_chip *chip, int id, char *buf);
++};
++
++struct mv88e6xxx_dbg_priv {
++	const struct mv88e6xxx_dbg_ops *ops;
++	struct mv88e6xxx_chip *chip;
++	int id;
++};
++
++static int mv88e6xxx_dbg_show(struct seq_file *seq, void *p)
++{
++	struct mv88e6xxx_dbg_priv *priv = seq->private;
++	struct mv88e6xxx_chip *chip = priv->chip;
++	int err;
++
++	if (!priv->ops->read) {
++		pr_err("file mode bypassed???\n");
++		return -EOPNOTSUPP;
++	}
++
++	mutex_lock(&chip->reg_lock);
++	err = priv->ops->read(chip, priv->id, seq);
++	mutex_unlock(&chip->reg_lock);
++
++	return err;
++}
++
++static ssize_t mv88e6xxx_dbg_write(struct file *file,
++				   const char __user *user_buf, size_t count,
++				   loff_t *ppos)
++{
++	struct seq_file *seq = file->private_data;
++	struct mv88e6xxx_dbg_priv *priv = seq->private;
++	struct mv88e6xxx_chip *chip = priv->chip;
++	char buf[count + 1];
++	int err;
++
++	if (!priv->ops->write) {
++		pr_err("file mode bypassed???\n");
++		return -EOPNOTSUPP;
++	}
++
++	if (copy_from_user(buf, user_buf, count))
++		return -EFAULT;
++
++	buf[count] = '\0';
++
++	mutex_lock(&chip->reg_lock);
++	err = priv->ops->write(chip, priv->id, buf);
++	mutex_unlock(&chip->reg_lock);
++
++	return err ? err : count;
++}
++
++static int mv88e6xxx_dbg_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, mv88e6xxx_dbg_show, inode->i_private);
++}
++
++static const struct file_operations mv88e6xxx_dbg_fops = {
++	.open = mv88e6xxx_dbg_open,
++	.read = seq_read,
++	.write = mv88e6xxx_dbg_write,
++	.llseek = no_llseek,
++	.release = single_release,
++	.owner = THIS_MODULE,
++};
++
++static int mv88e6xxx_dbg_create_file(struct mv88e6xxx_chip *chip,
++				     struct dentry *dir, char *name, int id,
++				     const struct mv88e6xxx_dbg_ops *ops)
++{
++	struct mv88e6xxx_dbg_priv *priv;
++	struct dentry *entry;
++	umode_t mode;
++
++	priv = devm_kzalloc(chip->dev, sizeof(*priv), GFP_KERNEL);
++	if (!priv)
++		return -ENOMEM;
++
++	priv->chip = chip;
++	priv->ops = ops;
++	priv->id = id;
++
++	mode = 0;
++	if (ops->read)
++		mode |= S_IRUGO;
++	if (ops->write)
++		mode |= S_IWUSR;
++
++	entry = debugfs_create_file(name, mode, dir, priv, &mv88e6xxx_dbg_fops);
++	if (!entry)
++		return -EFAULT;
++
++	if (IS_ERR(entry))
++		return PTR_ERR(entry);
++
++	return 0;
++}
++
++static const char * const mv88e6xxx_port_8021q_mode_names[] = {
++	[MV88E6XXX_PORT_CTL2_8021Q_MODE_DISABLED] = "Disabled",
++	[MV88E6XXX_PORT_CTL2_8021Q_MODE_FALLBACK] = "Fallback",
++	[MV88E6XXX_PORT_CTL2_8021Q_MODE_CHECK] = "Check",
++	[MV88E6XXX_PORT_CTL2_8021Q_MODE_SECURE] = "Secure",
++};
++
++static int mv88e6xxx_dbg_8021q_mode_read(struct mv88e6xxx_chip *chip, int id,
++					 struct seq_file *seq)
++{
++	u16 val;
++	int err;
++
++	err = mv88e6xxx_port_read(chip, id, MV88E6XXX_PORT_CTL2, &val);
++	if (err)
++		return err;
++
++	val &= MV88E6XXX_PORT_CTL2_8021Q_MODE_MASK;
++
++	seq_printf(seq, " %s\n", mv88e6xxx_port_8021q_mode_names[val]);
++
++	return 0;
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_8021q_mode_ops = {
++	.read = mv88e6xxx_dbg_8021q_mode_read,
++};
++
++static int mv88e6xxx_g1_atu_get_age_time(struct mv88e6xxx_chip *chip,
++					 unsigned int *msecs)
++{
++	u8 age_time;
++	u16 val;
++	int err;
++
++	err = mv88e6xxx_g1_read(chip, MV88E6XXX_G1_ATU_CTL, &val);
++	if (err)
++		return err;
++
++	/* AgeTime is 11:4 bits */
++	age_time = (val & 0xff0) >> 4;
++	*msecs = age_time * chip->info->age_time_coeff;
++
++	return 0;
++}
++
++static int mv88e6xxx_dbg_age_time_read(struct mv88e6xxx_chip *chip, int id,
++				       struct seq_file *seq)
++{
++	unsigned int msecs;
++	int err;
++
++	err = mv88e6xxx_g1_atu_get_age_time(chip, &msecs);
++	if (err)
++		return err;
++
++	seq_printf(seq, "%d\n", msecs);
++
++	return 0;
++}
++
++static int mv88e6xxx_dbg_age_time_write(struct mv88e6xxx_chip *chip, int id,
++					char *buf)
++{
++	unsigned int msecs;
++
++	if (kstrtouint(buf, 10, &msecs))
++		return -EINVAL;
++
++	return mv88e6xxx_g1_atu_set_age_time(chip, msecs);
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_age_time_ops = {
++	.read = mv88e6xxx_dbg_age_time_read,
++	.write = mv88e6xxx_dbg_age_time_write,
++};
++
++static const char * const mv88e6xxx_atu_unicast_state_names[] = {
++	[0x0] = "UNUSED", /* MV88E6XXX_G1_ATU_DATA_STATE_UNUSED */
++	[0x1] = "Age 1 (oldest)",
++	[0x2] = "Age 2",
++	[0x3] = "Age 3",
++	[0x4] = "Age 4",
++	[0x5] = "Age 5",
++	[0x6] = "Age 6",
++	[0x7] = "Age 7 (newest)",
++	[0x8] = "UC_STATIC_POLICY",
++	[0x9] = "UC_STATIC_POLICY_PO",
++	[0xa] = "UC_STATIC_NRL",
++	[0xb] = "UC_STATIC_NRL_PO",
++	[0xc] = "UC_STATIC_MGMT",
++	[0xd] = "UC_STATIC_MGMT_PO", /* MV88E6XXX_G1_ATU_DATA_STATE_UC_MGMT */
++	[0xe] = "UC_STATIC", /* MV88E6XXX_G1_ATU_DATA_STATE_UC_STATIC */
++	[0xf] = "UC_STATIC_PO", /* MV88E6XXX_G1_ATU_DATA_STATE_UC_PRIO_OVER */
++};
++
++static const char * const mv88e6xxx_atu_multicast_state_names[] = {
++	[0x0] = "UNUSED", /* MV88E6XXX_G1_ATU_DATA_STATE_UNUSED */
++	[0x1] = "RESERVED",
++	[0x2] = "RESERVED",
++	[0x3] = "RESERVED",
++	[0x4] = "MC_STATIC_POLICY",
++	[0x5] = "MC_STATIC_NRL", /* MV88E6XXX_G1_ATU_DATA_STATE_MC_NONE_RATE */
++	[0x6] = "MC_STATIC_MGMT",
++	[0x7] = "MC_STATIC", /* MV88E6XXX_G1_ATU_DATA_STATE_MC_STATIC */
++	[0x8] = "RESERVED",
++	[0x9] = "RESERVED",
++	[0xa] = "RESERVED",
++	[0xb] = "RESERVED",
++	[0xc] = "MC_STATIC_POLICY_PO",
++	[0xd] = "MC_STATIC_NRL_PO",
++	[0xe] = "MC_STATIC_MGMT_PO", /* MV88E6XXX_G1_ATU_DATA_STATE_MC_MGMT */
++	[0xf] = "MC_STATIC_PO", /* MV88E6XXX_G1_ATU_DATA_STATE_MC_PRIO_OVER */
++};
++
++static void mv88e6xxx_dbg_atu_read_ent(struct mv88e6xxx_chip *chip,
++				       struct seq_file *seq, u16 fid,
++				       const struct mv88e6xxx_atu_entry *entry)
++{
++	int i;
++
++	/* FID */
++	seq_printf(seq, "%4d", fid);
++
++	/* MAC address */
++	seq_printf(seq, "  %.2x", entry->mac[0]);
++	for (i = 1; i < ETH_ALEN; ++i)
++		seq_printf(seq, ":%.2x", entry->mac[i]);
++
++	/* State */
++	seq_printf(seq, "  %19s", is_multicast_ether_addr(entry->mac) ?
++		   mv88e6xxx_atu_multicast_state_names[entry->state] :
++		   mv88e6xxx_atu_unicast_state_names[entry->state]);
++
++	/* Trunk ID or Port vector */
++	if (entry->trunk) {
++		seq_printf(seq, "       y  %d", entry->portvec);
++	} else {
++		seq_puts(seq, "       n ");
++		for (i = 0; i < mv88e6xxx_num_ports(chip); ++i)
++			if (entry->portvec & BIT(i))
++				seq_printf(seq, " %d", i);
++			else
++				seq_puts(seq, " -");
++	}
++
++	seq_puts(seq, "\n");
++}
++
++static int mv88e6xxx_dbg_atu_read(struct mv88e6xxx_chip *chip, int id,
++				  struct seq_file *seq)
++{
++	struct mv88e6xxx_atu_entry next;
++	int err;
++
++	seq_puts(seq, " FID  MAC Addr                  State         Trunk?  DPV/Trunk ID\n");
++
++	next.state = MV88E6XXX_G1_ATU_DATA_STATE_UC_UNUSED;
++	eth_broadcast_addr(next.mac);
++
++	do {
++		err = mv88e6xxx_g1_atu_getnext(chip, id, &next);
++		if (err)
++			return err;
++
++		if (next.state == MV88E6XXX_G1_ATU_DATA_STATE_UC_UNUSED)
++			break;
++
++		mv88e6xxx_dbg_atu_read_ent(chip, seq, id, &next);
++	} while (!is_broadcast_ether_addr(next.mac));
++
++	return 0;
++}
++
++static int mv88e6xxx_dbg_atu_write(struct mv88e6xxx_chip *chip, int id,
++				   char *buf)
++{
++	struct mv88e6xxx_atu_entry entry = { 0 };
++	unsigned int port;
++	int ret;
++
++	ret = sscanf(buf, "%u %2hhx:%2hhx:%2hhx:%2hhx:%2hhx:%2hhx", &port,
++		     &entry.mac[0], &entry.mac[1], &entry.mac[2],
++		     &entry.mac[3], &entry.mac[4], &entry.mac[5]);
++	if (ret == 0)
++		return mv88e6xxx_g1_atu_flush(chip, id, true);
++
++	if (port >= mv88e6xxx_num_ports(chip))
++		return -ERANGE;
++
++	if (ret == 1)
++		return mv88e6xxx_g1_atu_remove(chip, id, port, true);
++
++	if (ret != 7)
++		return -EINVAL;
++
++	entry.state = 4;
++	entry.trunk = false;
++	entry.portvec = BIT(port);
++
++	return mv88e6xxx_g1_atu_loadpurge(chip, id, &entry);
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_atu_ops = {
++		.read = mv88e6xxx_dbg_atu_read,
++		.write = mv88e6xxx_dbg_atu_write,
++};
++
++static int mv88e6xxx_dbg_default_vid_read(struct mv88e6xxx_chip *chip, int id,
++					  struct seq_file *seq)
++{
++	u16 pvid;
++	int err;
++
++	err = mv88e6xxx_port_get_pvid(chip, id, &pvid);
++	if (err)
++		return err;
++
++	seq_printf(seq, "%d\n", pvid);
++
++	return 0;
++}
++
++static int mv88e6xxx_dbg_default_vid_write(struct mv88e6xxx_chip *chip, int id,
++					   char *buf)
++{
++	u16 pvid;
++
++	if (kstrtou16(buf, 10, &pvid))
++		return -EINVAL;
++
++	if (pvid >= VLAN_N_VID)
++		return -ERANGE;
++
++	return mv88e6xxx_port_set_pvid(chip, id, pvid);
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_default_vid_ops = {
++	.read = mv88e6xxx_dbg_default_vid_read,
++	.write = mv88e6xxx_dbg_default_vid_write,
++};
++
++// TODO write mv88e6xxx_g2_device_mapping_read()
++static int mv88e6xxx_dbg_device_map_read(struct mv88e6xxx_chip *chip, int id,
++					 struct seq_file *seq)
++{
++	u16 val;
++	int target, err;
++
++	seq_puts(seq, "Target Port\n");
++
++	for (target = 0; target < 32; ++target) {
++		val = target << __bf_shf(MV88E6XXX_G2_DEVICE_MAPPING_DEV_MASK);
++		err = mv88e6xxx_write(chip, chip->info->global2_addr,
++				      MV88E6XXX_G2_DEVICE_MAPPING, val);
++		if (err)
++			return err;
++
++		err = mv88e6xxx_read(chip, chip->info->global2_addr,
++				     MV88E6XXX_G2_DEVICE_MAPPING, &val);
++		if (err)
++			return err;
++
++		seq_printf(seq, "  %2d   %2d\n", target,
++			   val & MV88E6352_G2_DEVICE_MAPPING_PORT_MASK);
++	}
++
++	return 0;
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_device_map_ops = {
++	.read = mv88e6xxx_dbg_device_map_read,
++};
++
++static int mv88e6xxx_dbg_fid_read(struct mv88e6xxx_chip *chip, int id,
++				  struct seq_file *seq)
++{
++	u16 fid;
++	int err;
++
++	err = mv88e6xxx_port_get_fid(chip, id, &fid);
++	if (err)
++		return err;
++
++	seq_printf(seq, "%d\n", fid);
++
++	return 0;
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_fid_ops = {
++	.read = mv88e6xxx_dbg_fid_read,
++};
++
++static int mv88e6xxx_dbg_name_read(struct mv88e6xxx_chip *chip, int id,
++				   struct seq_file *seq)
++{
++	seq_printf(seq, "%s\n", chip->info->name);
++
++	return 0;
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_name_ops = {
++	.read = mv88e6xxx_dbg_name_read,
++};
++
++int mv88e6xxx_g2_pvt_read(struct mv88e6xxx_chip *chip, int src_dev,
++			  int src_port, u16 *data);
++
++static int mv88e6xxx_dbg_pvt_read(struct mv88e6xxx_chip *chip, int id,
++				  struct seq_file *seq)
++{
++	struct dsa_switch *ds;
++	int src_dev, src_port;
++	u16 pvlan;
++	int port;
++	int err;
++
++	/* header */
++	seq_puts(seq, " Dev Port PVLAN");
++	for (port = 0; port < mv88e6xxx_num_ports(chip); ++port)
++		seq_printf(seq, " %2d", port);
++	seq_puts(seq, "\n");
++
++	/* One line per external port */
++	for (src_dev = 0; src_dev < 32; ++src_dev) {
++		if (src_dev >= DSA_MAX_SWITCHES)
++			break;
++
++		ds = chip->ds->dst->ds[src_dev];
++		if (!ds)
++			break;
++
++		seq_puts(seq, "\n");
++		for (src_port = 0; src_port < ds->num_ports; ++src_port) {
++			err = mv88e6xxx_g2_pvt_read(chip, src_dev, src_port,
++						    &pvlan);
++			if (err)
++				return err;
++
++			seq_printf(seq, "  %d   %2d   %03x ", src_dev,
++				   src_port, pvlan);
++
++			/* One column per internal output port */
++			for (port = 0; port < mv88e6xxx_num_ports(chip); ++port)
++				if (pvlan & BIT(port))
++					seq_puts(seq, "  *");
++				else
++					seq_puts(seq, "  -");
++
++			seq_puts(seq, "\n");
++		}
++	}
++
++	return 0;
++}
++
++static int mv88e6xxx_dbg_pvt_write(struct mv88e6xxx_chip *chip, int id,
++				   char *buf)
++{
++	const u16 mask = mv88e6xxx_port_mask(chip);
++	unsigned int src_dev, src_port, pvlan;
++
++	if (sscanf(buf, "%d %d %x", &src_dev, &src_port, &pvlan) != 3)
++		return -EINVAL;
++
++	if (src_dev >= 32 || src_port >= 16 || pvlan & ~mask)
++		return -ERANGE;
++
++	return mv88e6xxx_g2_pvt_write(chip, src_dev, src_port, pvlan);
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_pvt_ops = {
++	.read = mv88e6xxx_dbg_pvt_read,
++	.write = mv88e6xxx_dbg_pvt_write,
++};
++
++enum {
++	/* Port Registers at 0 ... DSA_MAX_PORTS - 1 */
++	MV88E6XXX_DBG_REGS_ID_GLOBAL1 = DSA_MAX_PORTS,
++	MV88E6XXX_DBG_REGS_ID_GLOBAL2,
++	MV88E6XXX_DBG_REGS_ID_SERDES,
++};
++
++static int mv88e6xxx_serdes_read(struct mv88e6xxx_chip *chip, int reg,
++				 u16 *val)
++{
++	return mv88e6xxx_phy_page_read(chip, MV88E6352_ADDR_SERDES,
++				       MV88E6352_SERDES_PAGE_FIBER,
++				       reg, val);
++}
++
++static int mv88e6xxx_serdes_write(struct mv88e6xxx_chip *chip, int reg,
++				  u16 val)
++{
++	return mv88e6xxx_phy_page_write(chip, MV88E6352_ADDR_SERDES,
++					MV88E6352_SERDES_PAGE_FIBER,
++					reg, val);
++}
++
++static int mv88e6xxx_dbg_regs_read(struct mv88e6xxx_chip *chip, int id,
++				   struct seq_file *seq)
++{
++	u16 val;
++	int reg;
++	int err;
++
++	/* Label */
++	if (id == MV88E6XXX_DBG_REGS_ID_SERDES)
++		seq_printf(seq, "SerDes@%d\n", chip->ds->index);
++	else if (id == MV88E6XXX_DBG_REGS_ID_GLOBAL2)
++		seq_printf(seq, "Global2@%d\n", chip->ds->index);
++	else if (id == MV88E6XXX_DBG_REGS_ID_GLOBAL1)
++		seq_printf(seq, "Global1@%d\n", chip->ds->index);
++	else
++		seq_printf(seq, "Port %d.%d\n", chip->ds->index, id);
++
++	for (reg = 0; reg < 32; ++reg) {
++		if (id == MV88E6XXX_DBG_REGS_ID_SERDES)
++			err = mv88e6xxx_serdes_read(chip, reg, &val);
++		else if (id == MV88E6XXX_DBG_REGS_ID_GLOBAL2)
++			err = mv88e6xxx_read(chip, chip->info->global2_addr,
++					     reg, &val);
++		else if (id == MV88E6XXX_DBG_REGS_ID_GLOBAL1)
++			err = mv88e6xxx_g1_read(chip, reg, &val);
++		else
++			err = mv88e6xxx_port_read(chip, id, reg, &val);
++		if (err)
++			break;
++
++		seq_printf(seq, "%2d: %4x\n", reg, val);
++	}
++
++	return err;
++}
++
++static int mv88e6xxx_dbg_regs_write(struct mv88e6xxx_chip *chip, int id,
++				    char *buf)
++{
++	unsigned int reg, val;
++	int err;
++
++	if (sscanf(buf, "%x %x", &reg, &val) != 2)
++		return -EINVAL;
++
++	if (reg > 0x1f || val > 0xffff)
++		return -ERANGE;
++
++	if (id == MV88E6XXX_DBG_REGS_ID_SERDES)
++		err = mv88e6xxx_serdes_write(chip, reg, val);
++	else if (id == MV88E6XXX_DBG_REGS_ID_GLOBAL2)
++		err = mv88e6xxx_write(chip, chip->info->global2_addr, reg, val);
++	else if (id == MV88E6XXX_DBG_REGS_ID_GLOBAL1)
++		err = mv88e6xxx_g1_write(chip, reg, val);
++	else
++		err = mv88e6xxx_port_write(chip, id, reg, val);
++
++	return err;
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_regs_ops = {
++	.read = mv88e6xxx_dbg_regs_read,
++	.write = mv88e6xxx_dbg_regs_write,
++};
++
++static int mv88e6xxx_scratch_wait(struct mv88e6xxx_chip *chip)
++{
++	return mv88e6xxx_wait_mask(chip, chip->info->global2_addr,
++			      MV88E6XXX_G2_SCRATCH_MISC_MISC,
++			      MV88E6XXX_G2_SCRATCH_MISC_UPDATE,MV88E6XXX_G2_SCRATCH_MISC_UPDATE);
++}
++
++static int mv88e6xxx_dbg_scratch_read(struct mv88e6xxx_chip *chip, int id,
++				      struct seq_file *seq)
++{
++	u16 val;
++	int reg, err;
++
++	seq_puts(seq, "Register Value\n");
++
++	for (reg = 0; reg < 0x80; ++reg) {
++		val = reg << __bf_shf(MV88E6XXX_G2_SCRATCH_MISC_PTR_MASK);
++		err = mv88e6xxx_write(chip, chip->info->global2_addr,
++				      MV88E6XXX_G2_SCRATCH_MISC_MISC, val);
++		if (err)
++			return err;
++
++		err = mv88e6xxx_scratch_wait(chip);
++		if (err)
++			return err;
++
++		err = mv88e6xxx_read(chip, chip->info->global2_addr,
++				     MV88E6XXX_G2_SCRATCH_MISC_MISC, &val);
++		if (err)
++			return err;
++
++		seq_printf(seq, "  %2x   %2x\n", reg,
++			   val & MV88E6XXX_G2_SCRATCH_MISC_DATA_MASK);
++	}
++
++	return 0;
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_scratch_ops = {
++	.read = mv88e6xxx_dbg_scratch_read,
++};
++
++static const char * const mv88e6xxx_port_state_names[] = {
++	[MV88E6XXX_PORT_CTL0_STATE_DISABLED] = "Disabled",
++	[MV88E6XXX_PORT_CTL0_STATE_BLOCKING] = "Blocking", /* /Listening */
++	[MV88E6XXX_PORT_CTL0_STATE_LEARNING] = "Learning",
++	[MV88E6XXX_PORT_CTL0_STATE_FORWARDING] = "Forwarding",
++};
++
++static int mv88e6xxx_port_get_state(struct mv88e6xxx_chip *chip, int port,
++				    u8 *state)
++{
++	u16 reg;
++	int err;
++
++	err = mv88e6xxx_port_read(chip, port, MV88E6XXX_PORT_CTL0, &reg);
++	if (err)
++		return err;
++
++	*state = reg & MV88E6XXX_PORT_CTL0_STATE_MASK;
++
++	return 0;
++}
++
++static int mv88e6xxx_dbg_state_read(struct mv88e6xxx_chip *chip, int id,
++				    struct seq_file *seq)
++{
++	u8 state;
++	int err;
++
++	err = mv88e6xxx_port_get_state(chip, id, &state);
++	if (err)
++		return err;
++
++	seq_printf(seq, " %s\n", mv88e6xxx_port_state_names[state]);
++
++	return 0;
++}
++
++static int mv88e6xxx_dbg_state_write(struct mv88e6xxx_chip *chip, int id,
++				     char *buf)
++{
++	int state;
++
++	for (state = 0; state < ARRAY_SIZE(mv88e6xxx_port_state_names); ++state)
++		if (strncasecmp(mv88e6xxx_port_state_names[state], buf,
++				strlen(mv88e6xxx_port_state_names[state])) == 0)
++			return mv88e6xxx_port_set_state(chip, id, state);
++
++	return -EINVAL;
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_state_ops = {
++	.read = mv88e6xxx_dbg_state_read,
++	.write = mv88e6xxx_dbg_state_write,
++};
++
++static int mv88e6xxx_dbg_stats_read(struct mv88e6xxx_chip *chip, int id,
++				    struct seq_file *seq)
++{
++	int port = id;
++	int stat;
++	int err;
++	int types = 0;
++	u16 bank1_select;
++	u16 histogram;
++	u64 value;
++
++	if (chip->info->ops->stats_get_stats == mv88e6095_stats_get_stats) {
++		types = STATS_TYPE_BANK0 | STATS_TYPE_PORT;
++		bank1_select = 0;
++		histogram = MV88E6XXX_G1_STATS_OP_HIST_RX_TX;
++	}
++
++	if (chip->info->ops->stats_get_stats == mv88e6320_stats_get_stats) {
++		types = STATS_TYPE_BANK0 | STATS_TYPE_BANK1;
++		bank1_select = MV88E6XXX_G1_STATS_OP_BANK_1_BIT_9;
++		histogram = MV88E6XXX_G1_STATS_OP_HIST_RX_TX;
++	}
++
++	if (chip->info->ops->stats_get_stats == mv88e6390_stats_get_stats) {
++		types = STATS_TYPE_BANK0 | STATS_TYPE_BANK1;
++		bank1_select = MV88E6XXX_G1_STATS_OP_BANK_1_BIT_10;
++		histogram = 0;
++	}
++
++	seq_printf(seq, "         Stat       Port %d.%d\n", chip->ds->index,
++		   port);
++
++	for (stat = 0; stat < ARRAY_SIZE(mv88e6xxx_hw_stats); ++stat) {
++		struct mv88e6xxx_hw_stat *hw_stat = &mv88e6xxx_hw_stats[stat];
++
++		if (!(hw_stat->type & types))
++			continue;
++
++		seq_printf(seq, "%19s: ", hw_stat->string);
++
++		err = mv88e6xxx_stats_snapshot(chip, port);
++		if (err)
++			return err;
++
++		value = _mv88e6xxx_get_ethtool_stat(chip, hw_stat, port,
++						    bank1_select, histogram);
++		seq_printf(seq, "%8llu \n", value);
++	}
++
++	return 0;
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_stats_ops = {
++	.read = mv88e6xxx_dbg_stats_read,
++};
++
++static int mv88e6xxx_dbg_vlan_table_read(struct mv88e6xxx_chip *chip, int id,
++					 struct seq_file *seq)
++{
++	u16 val;
++	int i, err;
++
++	/* header */
++	seq_puts(seq, " Port");
++	for (i = 0; i < mv88e6xxx_num_ports(chip); ++i)
++		seq_printf(seq, " %2d", i);
++	seq_puts(seq, "\n");
++
++	seq_printf(seq, "%4d ", id);
++
++	err = mv88e6xxx_port_read(chip, id, MV88E6XXX_PORT_BASE_VLAN, &val);
++	if (err)
++		return err;
++
++	/* One column per output port */
++	for (i = 0; i < mv88e6xxx_num_ports(chip); ++i)
++		seq_printf(seq, "  %c", val & BIT(i) ? '*' : '-');
++	seq_puts(seq, "\n");
++
++	return 0;
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_vlan_table_ops = {
++	.read = mv88e6xxx_dbg_vlan_table_read,
++};
++
++static void mv88e6xxx_dbg_vtu_read_ent(struct mv88e6xxx_chip *chip,
++				       struct seq_file *seq,
++				       const struct mv88e6xxx_vtu_entry *entry)
++{
++	int i;
++
++	seq_puts(seq, " VID  FID  SID");
++	for (i = 0; i < mv88e6xxx_num_ports(chip); ++i)
++		seq_printf(seq, " %2d", i);
++	seq_puts(seq, "\n");
++
++	seq_printf(seq, "%4d %4d   %2d", entry->vid, entry->fid, entry->sid);
++
++	for (i = 0; i < mv88e6xxx_num_ports(chip); ++i) {
++		switch (entry->member[i]) {
++		case MV88E6XXX_G1_VTU_DATA_MEMBER_TAG_UNMODIFIED:
++			seq_puts(seq, "  =");
++			break;
++		case MV88E6XXX_G1_VTU_DATA_MEMBER_TAG_UNTAGGED:
++			seq_puts(seq, "  u");
++			break;
++		case MV88E6XXX_G1_VTU_DATA_MEMBER_TAG_TAGGED:
++			seq_puts(seq, "  t");
++			break;
++		case MV88E6XXX_G1_VTU_DATA_MEMBER_TAG_NON_MEMBER:
++			seq_puts(seq, "  x");
++			break;
++		default:
++			seq_puts(seq, " ??");
++			break;
++		}
++	}
++
++	seq_puts(seq, "\n");
++}
++
++#ifdef VTU_PER_VID_ENTRY
++static int mv88e6xxx_dbg_vtu_read(struct mv88e6xxx_chip *chip, int id,
++				  struct seq_file *seq)
++{
++	struct mv88e6xxx_vtu_entry entry;
++	int err;
++
++	err = mv88e6xxx_vtu_get(chip, id, &entry, false);
++	if (!err)
++		mv88e6xxx_dbg_vtu_read_ent(chip, seq, &entry);
++
++	return err == -EOPNOTSUPP ? 0 : err;
++}
++
++static int mv88e6xxx_dbg_vtu_write(struct mv88e6xxx_chip *chip, int id,
++				   char *buf)
++{
++	struct mv88e6xxx_vtu_entry entry = { 0 };
++	bool valid = true;
++	char tags[12]; /* DSA_MAX_PORTS */
++	int ret, port, vid, fid, sid;
++
++	/* scan 12 chars instead of num_ports to avoid dynamic scanning... */
++	ret = sscanf(buf, "%d %d %d %c %c %c %c %c %c %c %c %c %c %c %c", &vid,
++		     &fid, &sid, &tags[0], &tags[1], &tags[2], &tags[3],
++		     &tags[4], &tags[5], &tags[6], &tags[7], &tags[8], &tags[9],
++		     &tags[10], &tags[11]);
++	if (ret == 1)
++		valid = false;
++	else if (ret != 3 + mv88e6xxx_num_ports(chip))
++		return -EINVAL;
++
++	entry.vid = vid;
++	entry.valid = valid;
++
++	if (valid) {
++		entry.fid = fid;
++		entry.sid = sid;
++		/* Note: The VTU entry pointed by VID will be loaded but not
++		 * considered valid until the STU entry pointed by SID is valid.
++		 */
++
++		for (port = 0; port < mv88e6xxx_num_ports(chip); ++port) {
++			u8 tag;
++
++			switch (tags[port]) {
++			case 'u':
++				tag = MV88E6XXX_G1_VTU_DATA_MEMBER_TAG_UNTAGGED;
++				break;
++			case 't':
++				tag = MV88E6XXX_G1_VTU_DATA_MEMBER_TAG_TAGGED;
++				break;
++			case 'x':
++				tag = MV88E6XXX_G1_VTU_DATA_MEMBER_TAG_NON_MEMBER;
++				break;
++			case '=':
++				tag = MV88E6XXX_G1_VTU_DATA_MEMBER_TAG_UNMODIFIED;
++				break;
++			default:
++				return -EINVAL;
++			}
++
++			entry.data[port] = tag;
++		}
++	}
++
++	return mv88e6xxx_vtu_loadpurge(chip, &entry);
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_vtu_ops = {
++	.read = mv88e6xxx_dbg_vtu_read,
++	.write = mv88e6xxx_dbg_vtu_write,
++};
++#endif
++
++static int mv88e6xxx_dbg_vtu_dump_read(struct mv88e6xxx_chip *chip, int id,
++					  struct seq_file *seq)
++{
++	struct mv88e6xxx_vtu_entry next = {
++		.vid = chip->info->max_vid,
++	};
++	int err;
++
++	do {
++		err = mv88e6xxx_vtu_getnext(chip, &next);
++		if (err)
++			return err;
++
++		if (!next.valid)
++			break;
++
++		mv88e6xxx_dbg_vtu_read_ent(chip, seq, &next);
++	} while (next.vid < chip->info->max_vid);
++
++	return 0;
++}
++
++static const struct mv88e6xxx_dbg_ops mv88e6xxx_dbg_vtu_dump_ops = {
++	.read = mv88e6xxx_dbg_vtu_dump_read,
++};
++
++static int mv88e6xxx_dbg_init_atu(struct mv88e6xxx_chip *chip)
++{
++	struct dentry *dir;
++	char name[32];
++	int fid;
++	int err;
++
++	dir = debugfs_create_dir("atu", chip->debugfs_dir);
++	if (!dir)
++		return -EFAULT;
++
++	if (IS_ERR(dir))
++		return PTR_ERR(dir);
++
++	for (fid = 0; fid < mv88e6xxx_num_databases(chip); ++fid) {
++		snprintf(name, sizeof(name), "%d", fid);
++
++		err = mv88e6xxx_dbg_create_file(chip, dir, name, fid,
++						&mv88e6xxx_dbg_atu_ops);
++		if (err)
++			break;
++	}
++
++	return err;
++}
++
++
++static int mv88e6xxx_dbg_port_symlink(struct mv88e6xxx_chip *chip,
++				      struct dentry *dir, int port)
++{
++	struct net_device *netdev;
++	struct dentry *symlink;
++	char name[54];
++
++	if (dsa_is_cpu_port(chip->ds, port))
++		netdev = chip->ds->dst->cpu_dp->master;
++	else
++		netdev = chip->ds->ports[port].slave;
++
++	if (!netdev)
++		return 0;
++
++	snprintf(name, sizeof(name), "/sys/class/net/%s", netdev_name(netdev));
++
++	symlink = debugfs_create_symlink("net", dir, name);
++	if (!symlink)
++		return -EFAULT;
++
++	if (IS_ERR(symlink))
++		return PTR_ERR(symlink);
++
++	return 0;
++}
++
++static int mv88e6xxx_dbg_init_port(struct mv88e6xxx_chip *chip, int port)
++{
++	struct dentry *dir;
++	char name[32];
++	int err;
++
++	snprintf(name, sizeof(name), "p%d", port);
++
++	dir = debugfs_create_dir(name, chip->debugfs_dir);
++	if (!dir)
++		return -EFAULT;
++
++	if (IS_ERR(dir))
++		return PTR_ERR(dir);
++
++	err = mv88e6xxx_dbg_port_symlink(chip, dir, port);
++	if (err)
++		return err;
++
++	err = mv88e6xxx_dbg_create_file(chip, dir, "8021q_mode", port,
++					&mv88e6xxx_dbg_8021q_mode_ops);
++	if (err)
++		return err;
++
++	err = mv88e6xxx_dbg_create_file(chip, dir, "default_vid", port,
++					&mv88e6xxx_dbg_default_vid_ops);
++	if (err)
++		return err;
++
++	err = mv88e6xxx_dbg_create_file(chip, dir, "fid", port,
++					&mv88e6xxx_dbg_fid_ops);
++	if (err)
++		return err;
++
++	err = mv88e6xxx_dbg_create_file(chip, dir, "regs", port,
++					&mv88e6xxx_dbg_regs_ops);
++	if (err)
++		return err;
++
++	err = mv88e6xxx_dbg_create_file(chip, dir, "state", port,
++					&mv88e6xxx_dbg_state_ops);
++	if (err)
++		return err;
++
++	err = mv88e6xxx_dbg_create_file(chip, dir, "stats", port,
++					&mv88e6xxx_dbg_stats_ops);
++	if (err)
++		return err;
++
++	err = mv88e6xxx_dbg_create_file(chip, dir, "vlan_table", port,
++					&mv88e6xxx_dbg_vlan_table_ops);
++	if (err)
++		return err;
++
++	return 0;
++}
++
++static int mv88e6xxx_dbg_init_vtu(struct mv88e6xxx_chip *chip)
++{
++#ifdef VTU_PER_VID_ENTRY
++	struct dentry *dir;
++	char name[32];
++	int vid;
++	int err;
++
++	dir = debugfs_create_dir("vtu", chip->debugfs_dir);
++	if (!dir)
++		return -EFAULT;
++
++	if (IS_ERR(dir))
++		return PTR_ERR(dir);
++
++	for (vid = 0; vid < 4096; ++vid) {
++		snprintf(name, sizeof(name), "%d", vid);
++
++		err = mv88e6xxx_dbg_create_file(chip, dir, name, vid,
++						&mv88e6xxx_dbg_vtu_ops);
++		if (err)
++			return err;
++	}
++
++	return mv88e6xxx_dbg_create_file(chip, dir, "dump", -1,
++					 &mv88e6xxx_dbg_vtu_dump_ops);
++#else
++	return mv88e6xxx_dbg_create_file(chip, chip->debugfs_dir, "vtu", -1,
++					 &mv88e6xxx_dbg_vtu_dump_ops);
++#endif
++}
++
++static void mv88e6xxx_dbg_destroy_chip(struct mv88e6xxx_chip *chip)
++{
++	/* handles NULL */
++	debugfs_remove_recursive(chip->debugfs_dir);
++}
++
++static int mv88e6xxx_dbg_init_chip(struct mv88e6xxx_chip *chip)
++{
++	struct dentry *dir;
++	char name[32];
++	int err;
++	int i;
++
++	/* skip if there is no debugfs support */
++	if (!mv88e6xxx_dbg_dir)
++		return 0;
++
++	snprintf(name, sizeof(name), "sw%d", chip->ds->index);
++
++	dir = debugfs_create_dir(name, mv88e6xxx_dbg_dir);
++	if (!dir)
++		return -EFAULT;
++
++	if (IS_ERR(dir))
++		return PTR_ERR(dir);
++
++	chip->debugfs_dir = dir;
++
++	err = mv88e6xxx_dbg_create_file(chip, dir, "age_time", -1,
++					&mv88e6xxx_dbg_age_time_ops);
++	if (err)
++		goto destroy;
++
++	err = mv88e6xxx_dbg_create_file(chip, dir, "device_map", -1,
++					&mv88e6xxx_dbg_device_map_ops);
++	if (err)
++		goto destroy;
++
++
++	err = mv88e6xxx_dbg_create_file(chip, dir, "global1",
++					MV88E6XXX_DBG_REGS_ID_GLOBAL1,
++					&mv88e6xxx_dbg_regs_ops);
++	if (err)
++		goto destroy;
++
++	if (chip->info->global2_addr) {
++		err = mv88e6xxx_dbg_create_file(chip, dir, "global2",
++						MV88E6XXX_DBG_REGS_ID_GLOBAL2,
++						&mv88e6xxx_dbg_regs_ops);
++		if (err)
++			goto destroy;
++	}
++
++	err = mv88e6xxx_dbg_create_file(chip, dir, "name", -1,
++					&mv88e6xxx_dbg_name_ops);
++	if (err)
++		goto destroy;
++
++	if (mv88e6xxx_has_pvt(chip)) {
++		err = mv88e6xxx_dbg_create_file(chip, dir, "pvt", -1,
++						&mv88e6xxx_dbg_pvt_ops);
++		if (err)
++			goto destroy;
++	}
++
++	err = mv88e6xxx_dbg_create_file(chip, dir, "scratch", -1,
++					&mv88e6xxx_dbg_scratch_ops);
++	if (err)
++		goto destroy;
++
++	if (chip->info->ops->serdes_power) {
++		err = mv88e6xxx_dbg_create_file(chip, dir, "serdes",
++						MV88E6XXX_DBG_REGS_ID_SERDES,
++						&mv88e6xxx_dbg_regs_ops);
++		if (err)
++			goto destroy;
++	}
++
++	err = mv88e6xxx_dbg_init_atu(chip);
++	if (err)
++		goto destroy;
++
++	for (i = 0; i < mv88e6xxx_num_ports(chip); ++i) {
++		err = mv88e6xxx_dbg_init_port(chip, i);
++		if (err)
++			goto destroy;
++	}
++
++	if (chip->info->max_vid) {
++		err = mv88e6xxx_dbg_init_vtu(chip);
++		if (err)
++			goto destroy;
++	}
++
++	return 0;
++destroy:
++	mv88e6xxx_dbg_destroy_chip(chip);
++
++	return err;
++}
++
++static void mv88e6xxx_dbg_destroy_module(void)
++{
++	debugfs_remove_recursive(mv88e6xxx_dbg_dir);
++}
++
++static int mv88e6xxx_dbg_init_module(void)
++{
++	struct dentry *dir;
++	int err;
++
++	dir = debugfs_create_dir("mv88e6xxx", NULL);
++	if (!dir)
++		return -EFAULT;
++
++	if (IS_ERR(dir)) {
++		err = PTR_ERR(dir);
++
++		/* kernel built without debugfs support */
++		if (err == -ENODEV)
++			return 0;
++
++		return err;
++	}
++
++	mv88e6xxx_dbg_dir = dir;
++
++	return 0;
++}
+--- a/drivers/net/dsa/mv88e6xxx/global2.c
++++ b/drivers/net/dsa/mv88e6xxx/global2.c
+@@ -239,6 +239,23 @@ static int mv88e6xxx_g2_pvt_op(struct mv
+ 	return mv88e6xxx_g2_pvt_op_wait(chip);
+ }
+ 
++int mv88e6xxx_g2_pvt_read(struct mv88e6xxx_chip *chip, int src_dev,
++				 int src_port, u16 *data)
++{
++	int err;
++
++	err = mv88e6xxx_g2_pvt_op_wait(chip);
++	if (err)
++		return err;
++
++	err = mv88e6xxx_g2_pvt_op(chip, src_dev, src_port,
++				  MV88E6XXX_G2_PVT_ADDR_OP_READ);
++	if (err)
++		return err;
++
++	return mv88e6xxx_g2_read(chip, MV88E6XXX_G2_PVT_DATA, data);
++}
++
+ int mv88e6xxx_g2_pvt_write(struct mv88e6xxx_chip *chip, int src_dev,
+ 			   int src_port, u16 data)
+ {
