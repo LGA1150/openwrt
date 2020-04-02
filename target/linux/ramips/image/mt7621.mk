@@ -1119,6 +1119,14 @@ define Device/hiwifi_hc5962
 endef
 TARGET_DEVICES += hiwifi_hc5962
 
+define Device/hoelxun_yyets-le2
+  DEVICE_VENDOR := Hoelxun
+  DEVICE_MODEL := YYeTs-LE2
+  DEVICE_PACKAGES := kmod-mt7603 kmod-mt76x2 kmod-usb3 wpad-basic
+  IMAGE_SIZE := 32448k
+endef
+TARGET_DEVICES += hoelxun_yyets-le2
+
 define Device/humax_e10
   $(Device/dsa-migration)
   $(Device/uimage-lzma-loader)
