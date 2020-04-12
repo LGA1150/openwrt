@@ -1,0 +1,11 @@
+{
+	"luci-app-vlmcsd": {
+		"description": "Grant UCI access for luci-app-vlmcsd",
+		"read": {
+			"uci": [ "dhcp", "vlmcsd" ]
+		},
+		"write": {
+			"uci": [ "dhcp", "vlmcsd" ]
+		}
+	}
+}
