@@ -360,7 +360,7 @@ TARGET_DEVICES += netgear_r6250
 define Device/netgear_r6300-v2
   DEVICE_MODEL := R6300
   DEVICE_VARIANT := v2
-  DEVICE_PACKAGES := $(B43) $(USB3_PACKAGES)
+  DEVICE_PACKAGES := $(B43) $(USB3_PACKAGES) -swconfig
   $(Device/netgear)
   NETGEAR_BOARD_ID := U12H240T00_NETGEAR
 endef
