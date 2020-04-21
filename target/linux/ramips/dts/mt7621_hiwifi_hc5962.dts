@@ -136,6 +136,7 @@
 
 &gmac0 {
 	mtd-mac-address-ascii = <&bdinfo 0x18a>;
+	phy-mode = "trgmii";
 };
 
 &switch0 {
@@ -160,6 +161,10 @@
 			label = "wan";
 			mtd-mac-address-ascii = <&bdinfo 0x18a>;
 			mtd-mac-address-increment = <1>;
+		};
+
+		port@6 {
+			phy-mode = "trgmii";
 		};
 	};
 };
