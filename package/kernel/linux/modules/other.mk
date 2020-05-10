@@ -1040,7 +1040,6 @@ define KernelPackage/thermal
   SUBMENU:=$(OTHER_MENU)
   TITLE:=Thermal driver
   DEPENDS:=+kmod-hwmon-core
-  HIDDEN:=1
   KCONFIG:= \
 	CONFIG_THERMAL=y \
 	CONFIG_THERMAL_OF=y \
