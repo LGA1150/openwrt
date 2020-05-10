@@ -16,6 +16,10 @@
 		led-upgrade = &led_sys;
 	};
 
+	chosen {
+		bootargs-append = " ubi.mtd=ubi ubi.block=0,1 root=/dev/ubiblock0_1";
+	};
+
 	soc {
 		rng@22000 {
 			status = "okay";
