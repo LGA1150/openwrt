@@ -722,7 +722,7 @@ $(eval $(call KernelPackage,mppe))
 
 SCHED_MODULES = $(patsubst $(LINUX_DIR)/net/sched/%.ko,%,$(wildcard $(LINUX_DIR)/net/sched/*.ko))
 SCHED_MODULES_CORE = sch_ingress sch_fq_codel sch_hfsc sch_htb sch_tbf cls_basic cls_fw cls_route cls_flow cls_tcindex cls_u32 em_u32 act_gact act_mirred act_skbedit cls_matchall
-SCHED_MODULES_FILTER = $(SCHED_MODULES_CORE) act_connmark act_ctinfo sch_cake sch_netem sch_mqprio em_ipset cls_bpf cls_flower act_bpf act_vlan
+SCHED_MODULES_FILTER = $(SCHED_MODULES_CORE) act_connmark act_ctinfo sch_cake sch_netem sch_mqprio em_ipset cls_bpf cls_flower act_bpf act_vlan act_nat
 SCHED_MODULES_EXTRA = $(filter-out $(SCHED_MODULES_FILTER),$(SCHED_MODULES))
 SCHED_FILES = $(patsubst %,$(LINUX_DIR)/net/sched/%.ko,$(filter $(SCHED_MODULES_CORE),$(SCHED_MODULES)))
 SCHED_FILES_EXTRA = $(patsubst %,$(LINUX_DIR)/net/sched/%.ko,$(SCHED_MODULES_EXTRA))
@@ -843,6 +843,16 @@ define KernelPackage/sched-ctinfo
   AUTOLOAD:=$(call AutoLoad,71, act_ctinfo)
 endef
 $(eval $(call KernelPackage,sched-ctinfo))
+
+define KernelPackage/sched-nat
+  SUBMENU:=$(NETWORK_SUPPORT_MENU)
+  TITLE:=Traffic shaper stateless NAT support
+  DEPENDS:=+kmod-sched-core
+  KCONFIG:=CONFIG_NET_ACT_NAT
+  FILES:=$(LINUX_DIR)/net/sched/act_nat.ko
+  AUTOLOAD:=$(call AutoProbe, act_nat)
+endef
+$(eval $(call KernelPackage,sched-nat))
 
 define KernelPackage/sched-ipset
   SUBMENU:=$(NETWORK_SUPPORT_MENU)
