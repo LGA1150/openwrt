@@ -57,7 +57,6 @@ define Device/buffalo_ls421de
     kmod-linkstation-poweroff kmod-md-raid0 kmod-md-raid1 kmod-md-mod \
     kmod-fs-xfs mkf2fs e2fsprogs partx-utils
 endef
-TARGET_DEVICES += buffalo_ls421de
 
 define Device/ctera_c200-v2
   PAGESIZE := 2048
@@ -117,7 +116,6 @@ define Device/globalscale_mirabox
   SOC := armada-370
   SUPPORTED_DEVICES += mirabox
 endef
-TARGET_DEVICES += globalscale_mirabox
 
 define Device/iptime_nas1dual
   DEVICE_VENDOR := ipTIME
@@ -197,7 +195,6 @@ define Device/linksys_wrt1900ac-v1
   KERNEL_SIZE := 4096k
   SUPPORTED_DEVICES += armada-xp-linksys-mamba linksys,mamba
 endef
-TARGET_DEVICES += linksys_wrt1900ac-v1
 
 define Device/linksys_wrt1900ac-v2
   $(call Device/linksys)
@@ -245,7 +242,6 @@ define Device/marvell_a370-db
   DEVICE_DTS := armada-370-db
   SUPPORTED_DEVICES += armada-370-db
 endef
-TARGET_DEVICES += marvell_a370-db
 
 define Device/marvell_a370-rd
   $(Device/NAND-512K)
@@ -254,7 +250,6 @@ define Device/marvell_a370-rd
   DEVICE_DTS := armada-370-rd
   SUPPORTED_DEVICES += armada-370-rd
 endef
-TARGET_DEVICES += marvell_a370-rd
 
 define Device/marvell_a385-db-ap
   $(Device/NAND-256K)
@@ -286,7 +281,6 @@ define Device/marvell_axp-db
   DEVICE_DTS := armada-xp-db
   SUPPORTED_DEVICES += armada-xp-db
 endef
-TARGET_DEVICES += marvell_axp-db
 
 define Device/marvell_axp-gp
   $(Device/NAND-512K)
@@ -295,7 +289,6 @@ define Device/marvell_axp-gp
   DEVICE_DTS := armada-xp-gp
   SUPPORTED_DEVICES += armada-xp-gp
 endef
-TARGET_DEVICES += marvell_axp-gp
 
 define Device/plathome_openblocks-ax3-4
   DEVICE_VENDOR := Plat'Home
@@ -308,7 +301,6 @@ define Device/plathome_openblocks-ax3-4
   IMAGES += factory.img
   IMAGE/factory.img := append-kernel | pad-to $$(BLOCKSIZE) | append-ubi
 endef
-TARGET_DEVICES += plathome_openblocks-ax3-4
 
 define Device/solidrun_clearfog-base-a1
   DEVICE_VENDOR := SolidRun
