@@ -256,6 +256,10 @@ $(eval $(call nf_add,IPT_TEE,CONFIG_NETFILTER_XT_TARGET_TEE, $(P_XT)xt_TEE))
 $(eval $(if $(NF_KMOD),$(call nf_add,IPT_TEE,CONFIG_NF_DUP_IPV4, $(P_V4)nf_dup_ipv4),))
 $(eval $(if $(NF_KMOD),$(call nf_add,IPT_TEE,CONFIG_NF_DUP_IPV6, $(P_V6)nf_dup_ipv6),))
 
+# tcpoptstrip
+
+$(eval $(call nf_add,IPT_TCPOPTSTRIP,CONFIG_NETFILTER_XT_TARGET_TCPOPTSTRIP, $(P_XT)xt_TCPOPTSTRIP))
+
 # u32
 
 $(eval $(call nf_add,IPT_U32,CONFIG_NETFILTER_XT_MATCH_U32, $(P_XT)xt_u32))
