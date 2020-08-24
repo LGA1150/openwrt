@@ -449,6 +449,19 @@ TEE iptables extensions.
 
 endef
 
+define Package/iptables-mod-tcpoptstrip
+$(call Package/iptables/Module, +kmod-ipt-tcpoptstrip)
+  TITLE:=TCPOPTSTRIP iptables extensions
+endef
+
+define Package/iptables-mod-tcpoptstrip/description
+TCPOPTSTRIP iptables extensions.
+
+ Targets:
+  - TCPOPTSTRIP
+
+endef
+
 define Package/iptables-mod-u32
 $(call Package/iptables/Module, +kmod-ipt-u32)
   TITLE:=U32 iptables extensions
@@ -769,6 +782,7 @@ $(eval $(call BuildPlugin,iptables-mod-led,$(IPT_LED-m)))
 $(eval $(call BuildPlugin,iptables-mod-socket,$(IPT_SOCKET-m)))
 $(eval $(call BuildPlugin,iptables-mod-tproxy,$(IPT_TPROXY-m)))
 $(eval $(call BuildPlugin,iptables-mod-tee,$(IPT_TEE-m)))
+$(eval $(call BuildPlugin,iptables-mod-tcpoptstrip,$(IPT_TCPOPTSTRIP-m)))
 $(eval $(call BuildPlugin,iptables-mod-u32,$(IPT_U32-m)))
 $(eval $(call BuildPlugin,iptables-mod-nflog,$(IPT_NFLOG-m)))
 $(eval $(call BuildPlugin,iptables-mod-trace,$(IPT_DEBUG-m)))
