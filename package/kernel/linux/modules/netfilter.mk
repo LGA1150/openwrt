@@ -675,6 +675,20 @@ endef
 
 $(eval $(call KernelPackage,ipt-tee))
 
+define KernelPackage/ipt-tcpoptstrip
+  TITLE:=TCPOPTSTRIP target
+  KCONFIG:=$(KCONFIG_IPT_TCPOPTSTRIP)
+  FILES:=$(foreach mod,$(IPT_TCPOPTSTRIP-m),$(LINUX_DIR)/net/$(mod).ko)
+  AUTOLOAD:=$(call AutoProbe,$(notdir $(IPT_TCPOPTSTRIP-m)))
+  $(call AddDepends/ipt)
+endef
+
+define KernelPackage/ipt-tcpoptstrip/description
+ Netfilter target to strip TCP options
+endef
+
+$(eval $(call KernelPackage,ipt-tcpoptstrip))
+
 
 define KernelPackage/ipt-u32
   TITLE:=U32 support
