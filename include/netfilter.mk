@@ -253,6 +253,10 @@ $(eval $(call nf_add,IPT_LED,CONFIG_NETFILTER_XT_TARGET_LED, $(P_XT)xt_LED))
 
 $(eval $(call nf_add,IPT_TEE,CONFIG_NETFILTER_XT_TARGET_TEE, $(P_XT)xt_TEE))
 
+# tcpoptstrip
+
+$(eval $(call nf_add,IPT_TCPOPTSTRIP,CONFIG_NETFILTER_XT_TARGET_TCPOPTSTRIP, $(P_XT)xt_TCPOPTSTRIP))
+
 # u32
 
 $(eval $(call nf_add,IPT_U32,CONFIG_NETFILTER_XT_MATCH_U32, $(P_XT)xt_u32))
