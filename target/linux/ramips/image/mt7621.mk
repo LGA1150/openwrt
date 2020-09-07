@@ -2317,6 +2317,15 @@ define Device/tplink_tl-wpa8631p-v3
 endef
 TARGET_DEVICES += tplink_tl-wpa8631p-v3
 
+define Device/tplink_tl-wdr8620-v3
+  DEVICE_VENDOR := TP-Link
+  DEVICE_MODEL := TL-WDR8620
+  DEVICE_VARIANT := v3
+  DEVICE_PACKAGES := kmod-mt7615e kmod-mt7615-firmware kmod-usb3
+  IMAGE_SIZE := 7936k
+endef
+TARGET_DEVICES += tplink_tl-wdr8620-v3
+
 define Device/ubnt_edgerouter_common
   $(Device/dsa-migration)
   $(Device/uimage-lzma-loader)
