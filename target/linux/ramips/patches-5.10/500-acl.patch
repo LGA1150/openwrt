@@ -1,0 +1,619 @@
+diff --git a/drivers/net/dsa/mt7530.c b/drivers/net/dsa/mt7530.c
+index 9f265eec51e2..4c84beb4b57b 100644
+--- a/drivers/net/dsa/mt7530.c
++++ b/drivers/net/dsa/mt7530.c
+@@ -1568,6 +1568,507 @@ mt7530_port_vlan_del(struct dsa_switch *ds, int port,
+ 	return 0;
+ }
+ 
++static int
++mt7530_cls_flower_add(struct dsa_switch *ds, int port,
++		      struct flow_cls_offload *cls, bool ingress)
++{
++	struct flow_rule *rule = flow_cls_offload_flow_rule(cls);
++	struct flow_dissector *dissector = rule->match.dissector;
++	struct netlink_ext_ack *extack = cls->common.extack;
++	struct mt7530_priv *priv = ds->priv;
++	const struct flow_action_entry *act;
++
++	u64 acl_bitmap = 0;
++	u16 n_proto_mask = 0;
++	u16 n_proto_key = 0;
++	u16 addr_type = 0;
++	size_t count = 0;
++	u32 patterns[64], tables[64];
++	u32 action;
++	u8 ip_proto;
++	int i;
++
++	dev_info(priv->dev, "in cls_flower_add, cookie: %lu, classid: %u\n", cls->cookie, cls->classid);
++
++	if (!ingress) {
++		NL_SET_ERR_MSG_MOD(extack,
++				   "support ingress only");
++		return -EOPNOTSUPP;
++	}
++
++	dev_info(priv->dev, "used_keys: 0x%08x\n", dissector->used_keys);
++
++	if (dissector->used_keys &
++	    ~(BIT(FLOW_DISSECTOR_KEY_BASIC) |
++	      BIT(FLOW_DISSECTOR_KEY_CONTROL) |
++	      BIT(FLOW_DISSECTOR_KEY_IP) |
++	      BIT(FLOW_DISSECTOR_KEY_TCP) |
++	      BIT(FLOW_DISSECTOR_KEY_ICMP) |
++	      BIT(FLOW_DISSECTOR_KEY_IPV4_ADDRS) |
++	      BIT(FLOW_DISSECTOR_KEY_IPV6_ADDRS) |
++	      BIT(FLOW_DISSECTOR_KEY_PORTS) |
++	      BIT(FLOW_DISSECTOR_KEY_PORTS_RANGE) |
++	      BIT(FLOW_DISSECTOR_KEY_VLAN) |
++	      BIT(FLOW_DISSECTOR_KEY_ETH_ADDRS))) {
++		NL_SET_ERR_MSG_MOD(extack,
++				   "Unsupported keys used");
++		return -EOPNOTSUPP;
++	}
++
++	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_ETH_ADDRS)) {
++		struct flow_match_eth_addrs match;
++		const __be16 *dst_src_addr;
++		const __be16 *dst_src_mask;
++
++		flow_rule_match_eth_addrs(rule, &match);
++		dev_info(priv->dev, "in flow_match_eth_addrs\n");
++
++		dst_src_addr = (__be16*) match.key;
++		dst_src_mask = (__be16*) match.mask;
++
++		for (i = 0; i < ETH_ALEN; i++) {
++			if (dst_src_mask[i]) {
++				u32 pattern, table;
++
++				pattern = ntohs(dst_src_addr[i]);
++				pattern |= BIT_CMP(ntohs(dst_src_mask[i]));
++				table = ACL_TABLE_EN;
++				table |= OFST_TP(MT7530_ACL_MAC_HEADER);
++				table |= ACL_SP(BIT(port));
++				table |= WORD_OFST(i);
++
++				patterns[count] = pattern;
++				tables[count] = table;
++
++				count++;
++			}
++		}
++	}
++
++	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_CONTROL)) {
++		struct flow_match_control match;
++
++		flow_rule_match_control(rule, &match);
++		dev_info(priv->dev, "in flow_match_control\n");
++		addr_type = match.key->addr_type;
++	}
++
++	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_BASIC)) {
++		struct flow_match_basic match;
++
++		flow_rule_match_basic(rule, &match);
++		dev_info(priv->dev, "in flow_match_basic\n");
++		n_proto_key = ntohs(match.key->n_proto);
++		n_proto_mask = ntohs(match.mask->n_proto);
++		ip_proto = match.key->ip_proto & match.mask->ip_proto;
++
++		if (n_proto_key == ETH_P_ALL) {
++			n_proto_key = 0;
++			n_proto_mask = 0;
++		}
++
++		if (n_proto_mask) {
++			u32 pattern, table;
++
++			pattern = n_proto_key;
++			pattern |= BIT_CMP(n_proto_mask);
++			table = ACL_TABLE_EN;
++			table |= OFST_TP(MT7530_ACL_MAC_HEADER);
++			table |= ACL_SP(BIT(port));
++			table |= WORD_OFST(6);
++
++			patterns[count] = pattern;
++			tables[count] = table;
++
++			count++;
++		}
++
++		if (match.mask->ip_proto) {
++			u32 pattern, table;
++
++			pattern = match.key->ip_proto;
++			pattern |= BIT_CMP(match.mask->ip_proto);
++			table = ACL_TABLE_EN;
++			table |= ACL_SP(BIT(port));
++			if (n_proto_key == ETH_P_IP) {
++				table |= WORD_OFST(4);
++				table |= OFST_TP(MT7530_ACL_IP_HEADER);
++			} else if (n_proto_key == ETH_P_IPV6) {
++				pattern <<= 8;
++				table |= WORD_OFST(3);
++				table |= OFST_TP(MT7530_ACL_IPV6_HEADER);
++			} else {
++				return -EINVAL;
++			}
++
++			patterns[count] = pattern;
++			tables[count] = table;
++
++			count++;
++		}
++	}
++
++	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_IP)) {
++		struct flow_match_ip match;
++
++		flow_rule_match_ip(rule, &match);
++		dev_info(priv->dev, "in flow_match_ip\n");
++
++		if (match.mask->tos) {
++			u32 pattern, table;
++
++			pattern = match.key->tos;
++			pattern |= BIT_CMP(match.mask->tos);
++			table = ACL_TABLE_EN;
++			table |= WORD_OFST(0);
++			table |= ACL_SP(BIT(port));
++
++			if (n_proto_key == ETH_P_IP) {
++				table |= OFST_TP(MT7530_ACL_IP_HEADER);
++			} else if (n_proto_key == ETH_P_IPV6) {
++				/* left shift 4 bits if it is IPv6 */
++				pattern <<= 4;
++				table |= OFST_TP(MT7530_ACL_IPV6_HEADER);
++			} else {
++				return -EINVAL;
++			}
++
++			patterns[count] = pattern;
++			tables[count] = table;
++
++			count++;
++		}
++
++		if (match.mask->ttl) {
++			u32 pattern, table;
++
++			pattern = match.key->ttl;
++			pattern |= BIT_CMP(match.mask->ttl);
++			table = ACL_TABLE_EN;
++			table |= ACL_SP(BIT(port));
++
++			if (n_proto_key == ETH_P_IP) {
++				/* left shift 8 bits if it is IPv4 */
++				pattern <<= 8;
++				table |= OFST_TP(MT7530_ACL_IP_HEADER);
++				table |= WORD_OFST(4);
++			} else if (n_proto_key == ETH_P_IPV6) {
++				table |= OFST_TP(MT7530_ACL_IPV6_HEADER);
++				table |= WORD_OFST(3);
++			} else {
++				return -EINVAL;
++			}
++
++			patterns[count] = pattern;
++			tables[count] = table;
++
++			count++;
++		}
++	}
++
++	if (addr_type == FLOW_DISSECTOR_KEY_IPV4_ADDRS) {
++		struct flow_match_ipv4_addrs match;
++		const __be16 *src_dst_addr;
++		const __be16 *src_dst_mask;
++		const int word_offset = 6;
++
++		flow_rule_match_ipv4_addrs(rule, &match);
++		dev_info(priv->dev, "in flow_match_ipv4_addrs\n");
++
++		src_dst_addr = (__be16*) match.key;
++		src_dst_mask = (__be16*) match.mask;
++
++		for (i = 0; i < sizeof(struct in_addr); i++) {
++			if (src_dst_mask[i]) {
++				u32 pattern, table;
++
++				pattern = ntohs(src_dst_addr[i]);
++				pattern |= BIT_CMP(ntohs(src_dst_mask[i]));
++				table = ACL_TABLE_EN;
++				table |= OFST_TP(MT7530_ACL_IP_HEADER);
++				table |= ACL_SP(BIT(port));
++				table |= WORD_OFST(i + word_offset);
++
++				patterns[count] = pattern;
++				tables[count] = table;
++
++				count++;
++			}
++		}
++	} else if (addr_type == FLOW_DISSECTOR_KEY_IPV6_ADDRS) {
++		struct flow_match_ipv6_addrs match;
++		const __be16 *src_dst_addr;
++		const __be16 *src_dst_mask;
++		const int word_offset = 4;
++
++		flow_rule_match_ipv6_addrs(rule, &match);
++		dev_info(priv->dev, "in flow_match_ipv6_addrs\n");
++
++		src_dst_addr = (__be16*) match.key;
++		src_dst_mask = (__be16*) match.mask;
++
++		for (i = 0; i < sizeof(struct in6_addr); i++) {
++			if (src_dst_mask[i]) {
++				u32 pattern, table;
++
++				pattern = ntohs(src_dst_addr[i]);
++				pattern |= BIT_CMP(ntohs(src_dst_mask[i]));
++				table = ACL_TABLE_EN;
++				table |= OFST_TP(MT7530_ACL_IPV6_HEADER);
++				table |= ACL_SP(BIT(port));
++				table |= WORD_OFST(i + word_offset);
++
++				patterns[count] = pattern;
++				tables[count] = table;
++
++				count++;
++			}
++		}
++	}
++
++	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_PORTS)) {
++		struct flow_match_ports match;
++		const __be16 *src_dst_port;
++		const __be16 *src_dst_mask;
++
++		flow_rule_match_ports(rule, &match);
++		dev_info(priv->dev, "in flow_match_ports\n");
++
++		src_dst_port = (__be16*) match.key;
++		src_dst_mask = (__be16*) match.mask;
++
++		for (i = 0; i < 2; i++) {
++			if (src_dst_mask[i]) {
++				u32 pattern, table;
++
++				pattern = ntohs(src_dst_port[i]) | BIT_CMP(ntohs(src_dst_mask[i]));
++				/* enable this pattern */
++				table = ACL_TABLE_EN;
++				/* offset type: TCP/UDP header */
++				table |= OFST_TP(MT7530_ACL_TCP_UDP_HEADER);
++				/* source switch port bitmap */
++				table |= ACL_SP(BIT(port));
++				/* word (2-octet) offset */
++				table |= WORD_OFST(i);
++
++				/* save to array */
++				patterns[count] = pattern;
++				tables[count] = table;
++
++				count++;
++			}
++		}
++	}
++
++	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_PORTS_RANGE)) {
++		struct flow_match_ports match;
++
++		flow_rule_match_ports(rule, &match);
++		dev_info(priv->dev, "in flow_match_ports\n");
++		/* TODO: figure out how it works */
++	}
++
++	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_TCP)) {
++		struct flow_match_tcp match;
++
++		flow_rule_match_tcp(rule, &match);
++		dev_info(priv->dev, "in flow_match_tcp\n");
++
++		if (match.mask->flags) {
++			u32 pattern, table;
++
++			pattern = ntohs(match.key->flags);
++			pattern |= BIT_CMP(ntohs(match.mask->flags));
++
++			/* enable this pattern */
++			table = ACL_TABLE_EN;
++			/* offset type: TCP/UDP header */
++			table |= OFST_TP(MT7530_ACL_TCP_UDP_HEADER);
++			/* source switch port bitmap */
++			table |= ACL_SP(BIT(port));
++			/* word (2-octet) offset */
++			table |= WORD_OFST(6);
++
++			/* save to array */
++			patterns[count] = pattern;
++			tables[count] = table;
++
++			count++;
++		}
++	}
++
++	if (flow_rule_match_key(rule, FLOW_DISSECTOR_KEY_ICMP)) {
++		struct flow_match_icmp match;
++
++		flow_rule_match_icmp(rule, &match);
++		dev_info(priv->dev, "in flow_match_icmp\n");
++
++		if (match.mask->type || match.mask->code) {
++			u32 pattern, table;
++
++			pattern = (match.key->type << 8) | match.key->code;
++			pattern |= BIT_CMP((match.mask->type << 8) | match.mask->code);
++
++			/* enable this pattern */
++			table = ACL_TABLE_EN;
++			/* offset type: IP payload */
++			table |= OFST_TP(MT7530_ACL_IP_DATAGRAM);
++			/* source switch port bitmap */
++			table |= ACL_SP(BIT(port));
++			/* word (2-octet) offset */
++			table |= WORD_OFST(0);
++
++			/* save to array */
++			patterns[count] = pattern;
++			tables[count] = table;
++
++			count++;
++		}
++
++		if (match.mask->id) {
++			u32 pattern, table;
++
++			pattern = match.key->id;
++			pattern |= BIT_CMP(match.mask->id);
++
++			/* enable this pattern */
++			table = ACL_TABLE_EN;
++			/* offset type: IP payload */
++			table |= OFST_TP(MT7530_ACL_IP_DATAGRAM);
++			/* source switch port bitmap */
++			table |= ACL_SP(BIT(port));
++			/* word (2-octet) offset */
++			table |= WORD_OFST(2);
++
++			/* save to array */
++			patterns[count] = pattern;
++			tables[count] = table;
++
++			count++;
++		}
++	}
++
++	action = ACL_INT_EN;
++	flow_action_for_each(i, act, &rule->action) {
++		switch (act->id) {
++		case FLOW_ACTION_ACCEPT:
++			/* No action */
++			break;
++		case FLOW_ACTION_DROP:
++			action |= PORT_FW_DROP;
++			break;
++		case FLOW_ACTION_TRAP:
++			action |= PORT_FW_CPU_ONLY;
++			break;
++		case FLOW_ACTION_REDIRECT: {
++			struct dsa_port *to_dp;
++
++			to_dp = dsa_port_from_netdev(act->dev);
++			if (IS_ERR(to_dp)) {
++				NL_SET_ERR_MSG_MOD(extack, "Destination must be a switch port");
++				return -EOPNOTSUPP;
++			}
++			if (to_dp->index == port) {
++				NL_SET_ERR_MSG_MOD(extack, "Destination must not be the same as source");
++				return -EOPNOTSUPP;
++			}
++
++			action |= ACL_PORT_EN;
++			action |= ACL_PORT(BIT(to_dp->index));
++			break;
++		}
++		case FLOW_ACTION_MIRRED:
++			/* TODO: properly configure mirror port */
++			action |= ACL_MIR_EN;
++			break;
++		case FLOW_ACTION_POLICE:
++			/* TODO: call the police */
++			break;
++		/* TODO: actions below should be tested */
++		case FLOW_ACTION_PRIORITY:
++			if (act->priority > 7) {
++				NL_SET_ERR_MSG_MOD(extack, "Priority larger than 7");
++				return -EOPNOTSUPP;
++			}
++			action |= PRI_USER(act->priority);
++			break;
++		case FLOW_ACTION_VLAN_POP:
++			action |= ACL_EG_TAG(MT7530_VLAN_EG_UNTAGGED);
++			break;
++		case FLOW_ACTION_VLAN_PUSH:
++			action |= ACL_EG_TAG(MT7530_VLAN_EG_TAGGED);
++			break;
++		case FLOW_ACTION_VLAN_MANGLE:
++			action |= ACL_EG_TAG(MT7530_VLAN_EG_SWAP);
++			break;
++		default:
++			NL_SET_ERR_MSG_MOD(extack, "Action not supported");
++			return -EOPNOTSUPP;
++		}
++	}
++
++	if (!count) {
++		/* add a match-all dummy one */
++		patterns[0] = 0;
++		tables[0] = ACL_TABLE_EN;
++		tables[0] |= OFST_TP(MT7530_ACL_MAC_HEADER);
++		tables[0] |= ACL_SP(BIT(port));
++		tables[0] |= WORD_OFST(0);
++
++		count++;
++	}
++
++	mutex_lock(&priv->reg_mutex);
++
++	/* Enable port ACL bit */
++	mt7530_set(priv, MT7530_PCR_P(port), PORT_ACL_EN);
++
++	for (i = 0; i < count; i++) {
++		dev_info(priv->dev, "writing acl pattern %d, vawd1: 0x%08x, vawd2: 0x%08x\n", i, patterns[i], tables[i]);
++		mt7530_write(priv, MT7530_VAWD1, patterns[i]);
++		mt7530_write(priv, MT7530_VAWD2, tables[i]);
++		mt7530_vlan_cmd(priv, MT7530_VTCR_WR_ACL_TABLE, i);
++		acl_bitmap |= BIT(i);
++	}
++
++	dev_info(priv->dev, "writing acl mask %d, vawd1: 0x%08x, vawd2: 0x%08x\n", 0, (u32) acl_bitmap, (u32) (acl_bitmap >> 32));
++	mt7530_write(priv, MT7530_VAWD1, (u32) acl_bitmap);
++	mt7530_write(priv, MT7530_VAWD2, (u32) (acl_bitmap >> 32));
++	mt7530_vlan_cmd(priv, MT7530_VTCR_WR_ACL_MASK, 0);
++
++	dev_info(priv->dev, "writing acl action %d, vawd1: 0x%08x, vawd2: 0x%08x\n", 0, action, 0);
++	mt7530_write(priv, MT7530_VAWD1, action);
++	mt7530_write(priv, MT7530_VAWD2, 0);
++	mt7530_vlan_cmd(priv, MT7530_VTCR_WR_ACL_ACTION, 0);
++
++	mutex_unlock(&priv->reg_mutex);
++
++	return 0;
++}
++
++static int
++mt7530_cls_flower_del(struct dsa_switch *ds, int port,
++		      struct flow_cls_offload *cls, bool ingress)
++{
++	struct mt7530_priv *priv = ds->priv;
++
++	dev_info(priv->dev, "in cls_flower_del, cookie: %lu, classid: %u\n", cls->cookie, cls->classid);
++	mt7530_clear(priv, MT7530_PCR_P(port), PORT_ACL_EN);
++
++	return 0;
++}
++
++static int
++mt7530_cls_flower_stats(struct dsa_switch *ds, int port,
++			struct flow_cls_offload *cls, bool ingress)
++{
++	struct mt7530_priv *priv = ds->priv;
++
++	dev_info(priv->dev, "in cls_flower_stats, cookie: %lu, classid: %u\n", cls->cookie, cls->classid);
++
++	return 0;
++}
++
+ static int mt753x_mirror_port_get(unsigned int id, u32 val)
+ {
+ 	return (id == ID_MT7531) ? MT7531_MIRROR_PORT_GET(val) :
+@@ -2814,6 +3315,9 @@ static const struct dsa_switch_ops mt7530_switch_ops = {
+ 	.port_vlan_prepare	= mt7530_port_vlan_prepare,
+ 	.port_vlan_add		= mt7530_port_vlan_add,
+ 	.port_vlan_del		= mt7530_port_vlan_del,
++	.cls_flower_add		= mt7530_cls_flower_add,
++	.cls_flower_del		= mt7530_cls_flower_del,
++	.cls_flower_stats	= mt7530_cls_flower_stats,
+ 	.port_mirror_add	= mt753x_port_mirror_add,
+ 	.port_mirror_del	= mt753x_port_mirror_del,
+ 	.port_policer_add	= mt7530_port_policer_add,
+diff --git a/drivers/net/dsa/mt7530.h b/drivers/net/dsa/mt7530.h
+index a69e027927d2..a34779a8ed8c 100644
+--- a/drivers/net/dsa/mt7530.h
++++ b/drivers/net/dsa/mt7530.h
+@@ -137,6 +137,15 @@ enum mt7530_vlan_cmd {
+ 	 */
+ 	MT7530_VTCR_RD_VID = 0,
+ 	MT7530_VTCR_WR_VID = 1,
++	/* Read/Write the specified ACL rule table */
++	MT7530_VTCR_RD_ACL_TABLE = 4,
++	MT7530_VTCR_WR_ACL_TABLE = 5,
++	/* Read/Write the specified ACL rule mask */
++	MT7530_VTCR_RD_ACL_MASK = 8,
++	MT7530_VTCR_WR_ACL_MASK = 9,
++	/* Read/Write the specified ACL rule control */
++	MT7530_VTCR_RD_ACL_ACTION = 10,
++	MT7530_VTCR_WR_ACL_ACTION = 11,
+ };
+ 
+ /* Register for setup vlan and acl write data */
+@@ -153,6 +162,35 @@ enum mt7530_vlan_cmd {
+ #define  PORT_MEM_SHFT			16
+ #define  PORT_MEM_MASK			0xff
+ 
++/* ACL rule table */
++#define  BIT_CMP(x)			(((x) & 0xffff) << 16)
++#define  CMP_PAT(x)			((x) & 0xffff)
++
++/* ACL rule control */
++#define  ACL_MANG			BIT(29)
++#define  ACL_INT_EN			BIT(28)
++#define  ACL_CNT_EN			BIT(27)
++#define  ACL_CNT_IDX(x)			(((x) & 0x7) << 24)
++#define  VLAN_PORT_EN			BIT(23)
++#define  DA_SWAP			BIT(22)
++#define  SA_SWAP			BIT(21)
++#define  PPP_RM				BIT(20)
++#define  LKY_VLAN			BIT(19)
++#define  ACL_EG_TAG(x)			(((x) & 0x7) << 16)
++#define  ACL_PORT(x)			(((x) & 0xff) << 8)
++#define  ACL_PORT_EN			BIT(7)
++#define  PRI_USER(x)			(((x) & 0x7) << 4)
++#define  ACL_MIR_EN			BIT(3)
++#define  ACL_PORT_FW(x)			((x) & 0x7)
++
++enum mt7530_to_cpu_port_fw {
++	PORT_FW_DEFAULT,
++	PORT_FW_EXCLUDE_CPU = 4,
++	PORT_FW_INCLUDE_CPU,
++	PORT_FW_CPU_ONLY,
++	PORT_FW_DROP,
++};
++
+ #define MT7530_VAWD2			0x98
+ /* Egress Tag Control */
+ #define  ETAG_CTRL_P(p, x)		(((x) & 0x3) << ((p) << 1))
+@@ -164,6 +202,22 @@ enum mt7530_vlan_egress_attr {
+ 	MT7530_VLAN_EGRESS_STACK = 3,
+ };
+ 
++#define  ACL_TABLE_EN			BIT(19)
++#define  OFST_TP(x)			(((x) & 0x7) << 16)
++#define  ACL_SP(x)			(((x) & 0xff) << 8)
++#define  WORD_OFST(x)			(((x) & 0x7f) << 1)
++#define  CMP_SEL			BIT(0)
++
++enum mt7530_acl_offset_type {
++	MT7530_ACL_MAC_HEADER,
++	MT7530_ACL_L2_PAYLOAD,
++	MT7530_ACL_IP_HEADER,
++	MT7530_ACL_IP_DATAGRAM,
++	MT7530_ACL_TCP_UDP_HEADER,
++	MT7530_ACL_TCP_UDP_DATAGRAM,
++	MT7530_ACL_IPV6_HEADER,
++};
++
+ /* Register for address age control */
+ #define MT7530_AAC			0xa0
+ /* Disable ageing */
+@@ -201,6 +255,7 @@ enum mt7530_stp_state {
+ 
+ /* Register for port control */
+ #define MT7530_PCR_P(x)			(0x2004 + ((x) * 0x100))
++#define  PORT_ACL_EN			BIT(10)
+ #define  PORT_TX_MIR			BIT(9)
+ #define  PORT_RX_MIR			BIT(8)
+ #define  PORT_VLAN(x)			((x) & 0x3)
+@@ -243,6 +298,9 @@ enum mt7530_port_mode {
+ enum mt7530_vlan_port_eg_tag {
+ 	MT7530_VLAN_EG_DISABLED = 0,
+ 	MT7530_VLAN_EG_CONSISTENT = 1,
++	MT7530_VLAN_EG_UNTAGGED = 4,
++	MT7530_VLAN_EG_SWAP = 5,
++	MT7530_VLAN_EG_TAGGED = 6,
+ };
+ 
+ enum mt7530_vlan_port_attr {
