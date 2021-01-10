@@ -47,6 +47,22 @@
 			gpios = <&gpio 16 GPIO_ACTIVE_LOW>;
 			linux,default-trigger = "dsa-0.0:02:1Gbps";
 		};
+
+		wan_green {
+			label = "green:wan";
+			gpios = <&switch0 3 GPIO_ACTIVE_LOW>;
+		};
+
+		lan1_green {
+			label = "green:lan1";
+			/* Polarity of switch port 3 LED is inverted */
+			gpios = <&switch0 9 GPIO_ACTIVE_HIGH>;
+		};
+
+		lan2_green {
+			label = "green:lan2";
+			gpios = <&switch0 6 GPIO_ACTIVE_LOW>;
+		};
 	};
 
 	reg_usb_vbus: regulator {
@@ -91,6 +107,9 @@
 };
 
 &switch0 {
+	gpio-controller;
+	#gpio-cells = <2>;
+
 	ports {
 		port@1 {
 			status = "okay";
