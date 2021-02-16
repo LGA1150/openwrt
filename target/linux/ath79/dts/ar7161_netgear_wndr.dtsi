@@ -103,19 +103,71 @@
 	rtl8366s {
 		compatible = "realtek,rtl8366s";
 
-		gpio-sda = <&gpio 5 GPIO_ACTIVE_HIGH>;
-		gpio-sck = <&gpio 7 GPIO_ACTIVE_HIGH>;
+		mdio-gpios = <&gpio 5 GPIO_ACTIVE_HIGH>;
+		mdc-gpios = <&gpio 7 GPIO_ACTIVE_HIGH>;
 
 		mdio-bus {
+			compatible = "realtek,smi-mdio";
 			#address-cells = <1>;
 			#size-cells = <0>;
 			status = "okay";
 
-			phy-mask = <0x10>;
+			phy0: ethernet-phy@0 {
+				reg = <0>;
+			};
+
+			phy1: ethernet-phy@1 {
+				reg = <1>;
+			};
+
+			phy2: ethernet-phy@2 {
+				reg = <2>;
+			};
+
+			phy3: ethernet-phy@3 {
+				reg = <3>;
+			};
 
 			phy4: ethernet-phy@4 {
 				reg = <4>;
+			};
+		};
+
+		ports {
+			port@0 {
+				reg = <0>;
+				label = "lan4";
+				phy-handle = <&phy0>;
+			};
+
+			port@1 {
+				reg = <1>;
+				label = "lan3";
+				phy-handle = <&phy1>;
+			};
+
+			port@2 {
+				reg = <2>;
+				label = "lan2";
+				phy-handle = <&phy2>;
+			};
+
+			port@3 {
+				reg = <3>;
+				label = "lan1";
+				phy-handle = <&phy3>;
+			};
+
+			port@5 {
+				reg = <5>;
+				label = "cpu";
+				ethernet = <&eth0>;
 				phy-mode = "rgmii";
+
+				fixed-link {
+					speed = <1000>;
+					full-duplex;
+				};
 			};
 		};
 	};

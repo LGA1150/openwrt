@@ -333,13 +333,7 @@ ath79_setup_interfaces()
 	netgear,wndr3800ch|\
 	netgear,wndrmac-v1|\
 	netgear,wndrmac-v2)
-		ucidef_set_interface_wan "eth1"
-		ucidef_add_switch "switch0" \
-			"0:lan:4" "1:lan:3" "2:lan:2" "3:lan:1" "5u@eth0"
-		ucidef_add_switch_attr "switch0" "blinkrate" 2
-		ucidef_add_switch_port_attr "switch0" 1 led 6
-		ucidef_add_switch_port_attr "switch0" 2 led 9
-		ucidef_add_switch_port_attr "switch0" 5 led 2
+		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4" "eth1"
 		;;
 	netgear,wnr2200-8m|\
 	netgear,wnr2200-16m)

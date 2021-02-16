@@ -1,0 +1,194 @@
+From 12292b8f50cbc7aea1197af91c3e9fea37885c21 Mon Sep 17 00:00:00 2001
+From: DENG Qingfang <dqfext@gmail.com>
+Date: Tue, 9 Feb 2021 14:25:34 +0800
+Subject: [PATCH] net: dsa: add Realtek RTL8366S switch tag
+
+Add support for Realtek RTL8366S switch tag
+
+Signed-off-by: DENG Qingfang <dqfext@gmail.com>
+---
+ include/net/dsa.h      |   2 +
+ net/dsa/Kconfig        |   6 +++
+ net/dsa/Makefile       |   1 +
+ net/dsa/tag_rtl8366s.c | 120 +++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 129 insertions(+)
+ create mode 100644 net/dsa/tag_rtl8366s.c
+
+diff --git a/include/net/dsa.h b/include/net/dsa.h
+index 96543b095483..afea72988c95 100644
+--- a/include/net/dsa.h
++++ b/include/net/dsa.h
+@@ -43,6 +43,7 @@ struct phylink_link_state;
+ #define DSA_TAG_PROTO_SJA1105_VALUE		13
+ #define DSA_TAG_PROTO_KSZ8795_VALUE		14
+ #define DSA_TAG_PROTO_RTL4_A_VALUE		17
++#define DSA_TAG_PROTO_RTL8366S_VALUE		21
+ 
+ enum dsa_tag_protocol {
+ 	DSA_TAG_PROTO_NONE		= DSA_TAG_PROTO_NONE_VALUE,
+@@ -61,6 +62,7 @@ enum dsa_tag_protocol {
+ 	DSA_TAG_PROTO_SJA1105		= DSA_TAG_PROTO_SJA1105_VALUE,
+ 	DSA_TAG_PROTO_KSZ8795		= DSA_TAG_PROTO_KSZ8795_VALUE,
+ 	DSA_TAG_PROTO_RTL4_A		= DSA_TAG_PROTO_RTL4_A_VALUE,
++	DSA_TAG_PROTO_RTL8366S		= DSA_TAG_PROTO_RTL8366S_VALUE,
+ };
+ 
+ struct packet_type;
+diff --git a/net/dsa/Kconfig b/net/dsa/Kconfig
+index d189f16ee3cc..cdf003d9b163 100644
+--- a/net/dsa/Kconfig
++++ b/net/dsa/Kconfig
+@@ -79,6 +79,12 @@ config NET_DSA_TAG_KSZ
+ 	  Say Y if you want to enable support for tagging frames for the
+ 	  Microchip 8795/9477/9893 families of switches.
+ 
++config NET_DSA_TAG_RTL8366S
++	tristate "Tag driver for Realtek RTL8366S switch tags"
++	help
++	  Say Y or M if you want to enable support for tagging frames for the
++	  Realtek RTL8366S switch.
++
+ config NET_DSA_TAG_RTL4_A
+ 	tristate "Tag driver for Realtek 4 byte protocol A tags"
+ 	help
+diff --git a/net/dsa/Makefile b/net/dsa/Makefile
+index f4f81d260ff8..657d1a865007 100644
+--- a/net/dsa/Makefile
++++ b/net/dsa/Makefile
+@@ -11,6 +11,7 @@ obj-$(CONFIG_NET_DSA_TAG_EDSA) += tag_edsa.o
+ obj-$(CONFIG_NET_DSA_TAG_GSWIP) += tag_gswip.o
+ obj-$(CONFIG_NET_DSA_TAG_KSZ) += tag_ksz.o
+ obj-$(CONFIG_NET_DSA_TAG_RTL4_A) += tag_rtl4_a.o
++obj-$(CONFIG_NET_DSA_TAG_RTL8366S) += tag_rtl8366s.o
+ obj-$(CONFIG_NET_DSA_TAG_LAN9303) += tag_lan9303.o
+ obj-$(CONFIG_NET_DSA_TAG_MTK) += tag_mtk.o
+ obj-$(CONFIG_NET_DSA_TAG_QCA) += tag_qca.o
+diff --git a/net/dsa/tag_rtl8366s.c b/net/dsa/tag_rtl8366s.c
+new file mode 100644
+index 000000000000..27b88354d284
+--- /dev/null
++++ b/net/dsa/tag_rtl8366s.c
+@@ -0,0 +1,120 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Handler for Realtek RTL8366S switch tags
++ * Copyright (c) 2021 DENG, Qingfang <dqfext@gmail.com>
++ *
++ * This tag header looks like:
++ *
++ * -------------------------------------------------
++ * | MAC DA | MAC SA | 0x8899 | 2-byte tag  | Type |
++ * -------------------------------------------------
++ *
++ * The 2-byte tag format in tag_rcv:
++ *       +------+------+------+------+------+------+------+------+
++ * 15: 8 |   Protocol number (0x9)   |  Priority   |  Reserved   |
++ *       +------+------+------+------+------+------+------+------+
++ *  7: 0 |             Reserved             | Source port number |
++ *       +------+------+------+------+------+------+------+------+
++ *
++ * The 2-byte tag format in tag_xmit:
++ *       +------+------+------+------+------+------+------+------+
++ * 15: 8 |   Protocol number (0x9)   |  Priority   |  Reserved   |
++ *       +------+------+------+------+------+------+------+------+
++ *  7: 0 |  Reserved   |          Destination port mask          |
++ *       +------+------+------+------+------+------+------+------+
++ */
++
++#include <linux/etherdevice.h>
++#include <linux/version.h>
++
++#include "dsa_priv.h"
++
++#define RTL8366S_HDR_LEN	4
++#define RTL8366S_ETHERTYPE	0x8899
++#define RTL8366S_PROTOCOL_SHIFT	12
++#define RTL8366S_PROTOCOL	0x9
++#define RTL8366S_TAG	\
++	(RTL8366S_PROTOCOL << RTL8366S_PROTOCOL_SHIFT)
++
++static struct sk_buff *rtl8366s_tag_xmit(struct sk_buff *skb,
++					 struct net_device *dev)
++{
++	struct dsa_port *dp = dsa_slave_to_port(dev);
++	__be16 *tag;
++
++	/* Make sure the frame is at least 60 bytes long _before_
++	 * inserting the CPU tag, or it will be dropped by the switch.
++	 */
++	if (unlikely(__skb_put_padto(skb, ETH_ZLEN, false)))
++		return NULL;
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
++	if (unlikely(skb_cow_head(skb, RTL8366S_HDR_LEN) < 0))
++		return NULL;
++#endif
++
++	skb_push(skb, RTL8366S_HDR_LEN);
++	memmove(skb->data, skb->data + RTL8366S_HDR_LEN,
++		2 * ETH_ALEN);
++
++	tag = (__be16 *)(skb->data + 2 * ETH_ALEN);
++	tag[0] = htons(RTL8366S_ETHERTYPE);
++	tag[1] = htons(RTL8366S_TAG | BIT(dp->index));
++
++	return skb;
++}
++
++static struct sk_buff *rtl8366s_tag_rcv(struct sk_buff *skb,
++					struct net_device *dev,
++					struct packet_type *pt)
++{
++	u8 *tag;
++	u8 port;
++
++	if (unlikely(!pskb_may_pull(skb, RTL8366S_HDR_LEN)))
++		return NULL;
++
++	tag = skb->data - 2;
++	port = tag[3] & 0x7;
++
++	if (unlikely((tag[2] & ~0x90) || (tag[3] & ~0x7)))
++		netdev_info(dev, "Received a tag with other bits set: 0x%02x%02x\n", tag[2], tag[3]);
++
++	skb->dev = dsa_master_find_slave(dev, 0, port);
++	if (unlikely(!skb->dev))
++		return NULL;
++
++	skb_pull_rcsum(skb, RTL8366S_HDR_LEN);
++	memmove(skb->data - ETH_HLEN,
++		skb->data - ETH_HLEN - RTL8366S_HDR_LEN,
++		2 * ETH_ALEN);
++
++	skb->offload_fwd_mark = 1;
++
++	return skb;
++}
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
++static int rtl8366s_tag_flow_dissect(const struct sk_buff *skb, __be16 *proto,
++				   int *offset)
++{
++	*offset = RTL8366S_HDR_LEN;
++	*proto = ((__be16 *)skb->data)[1];
++	return 0;
++}
++#endif
++
++static const struct dsa_device_ops rtl8366s_netdev_ops = {
++	.name		= "rtl8366s",
++	.proto		= DSA_TAG_PROTO_RTL8366S,
++	.xmit		= rtl8366s_tag_xmit,
++	.rcv		= rtl8366s_tag_rcv,
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
++	.flow_dissect	= rtl8366s_tag_flow_dissect,
++#endif
++	.overhead	= RTL8366S_HDR_LEN,
++};
++module_dsa_tag_driver(rtl8366s_netdev_ops);
++
++MODULE_LICENSE("GPL");
++MODULE_ALIAS_DSA_TAG_DRIVER(DSA_TAG_PROTO_RTL8366S);
+-- 
+2.25.1
+
