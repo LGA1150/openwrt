@@ -5,8 +5,8 @@
 [ -z "$password" ] && write_log 14 "Configuration error! [Password] cannot be empty"
 
 #检查外部调用工具
-WGET_SSL='wget'
-[ -n "$WGET_SSL" ] || write_log 13 "GNU Wget support is required to use dnspod API. Please install first"
+WGET_SSL='/usr/libexec/wget-ssl'
+[ -f "$WGET_SSL" ] || write_log 13 "GNU Wget support is required to use dnspod API. Please install first"
 
 # 变量声明
 local __URLBASE __HOST __DOMAIN __TYPE __CMDBASE __POST __POST1 __RECIP __RECID __value __TTL
