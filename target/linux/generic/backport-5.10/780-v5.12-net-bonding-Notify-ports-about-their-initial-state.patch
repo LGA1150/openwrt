@@ -1,0 +1,37 @@
+From cad2398aaeef4c2d013591a12f0b0ad5bed04bd7 Mon Sep 17 00:00:00 2001
+From: Tobias Waldekranz <tobias@waldekranz.com>
+Date: Wed, 13 Jan 2021 09:42:51 +0100
+Subject: [PATCH] net: bonding: Notify ports about their initial state
+
+When creating a static bond (e.g. balance-xor), all ports will always
+be enabled. This is set, and the corresponding notification is sent
+out, before the port is linked to the bond upper.
+
+In the offloaded case, this ordering is hard to deal with.
+
+The lower will first see a notification that it can not associate with
+any bond. Then the bond is joined. After that point no more
+notifications are sent, so all ports remain disabled.
+
+This change simply sends an extra notification once the port has been
+linked to the upper to synchronize the initial state.
+
+Signed-off-by: Tobias Waldekranz <tobias@waldekranz.com>
+Acked-by: Jay Vosburgh <jay.vosburgh@canonical.com>
+Tested-by: Vladimir Oltean <olteanv@gmail.com>
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/bonding/bond_main.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+--- a/drivers/net/bonding/bond_main.c
++++ b/drivers/net/bonding/bond_main.c
+@@ -1923,6 +1923,8 @@ int bond_enslave(struct net_device *bond
+ 		goto err_unregister;
+ 	}
+ 
++	bond_lower_state_changed(new_slave);
++
+ 	res = bond_sysfs_slave_add(new_slave);
+ 	if (res) {
+ 		slave_dbg(bond_dev, slave_dev, "Error %d calling bond_sysfs_slave_add\n", res);

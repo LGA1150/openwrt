@@ -1,0 +1,79 @@
+From 185c9a760a61b034abb01a2dac8174b7da6e7ce4 Mon Sep 17 00:00:00 2001
+From: Vladimir Oltean <vladimir.oltean@nxp.com>
+Date: Tue, 23 Mar 2021 01:51:47 +0200
+Subject: [PATCH] net: dsa: call dsa_port_bridge_join when joining a LAG that
+ is already in a bridge
+
+DSA can properly detect and offload this sequence of operations:
+
+ip link add br0 type bridge
+ip link add bond0 type bond
+ip link set swp0 master bond0
+ip link set bond0 master br0
+
+But not this one:
+
+ip link add br0 type bridge
+ip link add bond0 type bond
+ip link set bond0 master br0
+ip link set swp0 master bond0
+
+Actually the second one is more complicated, due to the elapsed time
+between the enslavement of bond0 and the offloading of it via swp0, a
+lot of things could have happened to the bond0 bridge port in terms of
+switchdev objects (host MDBs, VLANs, altered STP state etc). So this is
+a bit of a can of worms, and making sure that the DSA port's state is in
+sync with this already existing bridge port is handled in the next
+patches.
+
+Signed-off-by: Vladimir Oltean <vladimir.oltean@nxp.com>
+Reviewed-by: Florian Fainelli <f.fainelli@gmail.com>
+Reviewed-by: Tobias Waldekranz <tobias@waldekranz.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ net/dsa/port.c | 22 ++++++++++++++++++----
+ 1 file changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/net/dsa/port.c b/net/dsa/port.c
+index c9c6d7ab3f47..d39262a9fe0e 100644
+--- a/net/dsa/port.c
++++ b/net/dsa/port.c
+@@ -249,17 +249,31 @@ int dsa_port_lag_join(struct dsa_port *dp, struct net_device *lag,
+ 		.lag = lag,
+ 		.info = uinfo,
+ 	};
++	struct net_device *bridge_dev;
+ 	int err;
+ 
+ 	dsa_lag_map(dp->ds->dst, lag);
+ 	dp->lag_dev = lag;
+ 
+ 	err = dsa_port_notify(dp, DSA_NOTIFIER_LAG_JOIN, &info);
+-	if (err) {
+-		dp->lag_dev = NULL;
+-		dsa_lag_unmap(dp->ds->dst, lag);
+-	}
++	if (err)
++		goto err_lag_join;
+ 
++	bridge_dev = netdev_master_upper_dev_get(lag);
++	if (!bridge_dev || !netif_is_bridge_master(bridge_dev))
++		return 0;
++
++	err = dsa_port_bridge_join(dp, bridge_dev);
++	if (err)
++		goto err_bridge_join;
++
++	return 0;
++
++err_bridge_join:
++	dsa_port_notify(dp, DSA_NOTIFIER_LAG_LEAVE, &info);
++err_lag_join:
++	dp->lag_dev = NULL;
++	dsa_lag_unmap(dp->ds->dst, lag);
+ 	return err;
+ }
+ 
+-- 
+2.25.1
+

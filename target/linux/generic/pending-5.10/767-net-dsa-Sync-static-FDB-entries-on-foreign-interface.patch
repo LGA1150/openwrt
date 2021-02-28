@@ -52,5 +52,5 @@ Signed-off-by: Tobias Waldekranz <tobias@waldekranz.com>
 +			if (!fdb_info->added_by_user &&
 +			    !dp->ds->assisted_learning_on_cpu_port)
  				return NOTIFY_DONE;
- 		}
  
+ 			/* When the bridge learns an address on an offloaded

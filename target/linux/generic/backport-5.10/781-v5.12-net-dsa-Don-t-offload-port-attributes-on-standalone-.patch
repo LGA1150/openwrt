@@ -1,0 +1,40 @@
+From 113073b1bfa84ef33749a30b4da8981678c8ded7 Mon Sep 17 00:00:00 2001
+From: Tobias Waldekranz <tobias@waldekranz.com>
+Date: Wed, 13 Jan 2021 09:42:52 +0100
+Subject: [PATCH] net: dsa: Don't offload port attributes on standalone ports
+
+In a situation where a standalone port is indirectly attached to a
+bridge (e.g. via a LAG) which is not offloaded, do not offload any
+port attributes either. The port should behave as a standard NIC.
+
+Previously, on mv88e6xxx, this meant that in the following setup:
+
+     br0
+     /
+  team0
+   / \
+swp0 swp1
+
+If vlan filtering was enabled on br0, swp0's and swp1's QMode was set
+to "secure". This caused all untagged packets to be dropped, as their
+default VID (0) was not loaded into the VTU.
+
+Signed-off-by: Tobias Waldekranz <tobias@waldekranz.com>
+Reviewed-by: Vladimir Oltean <olteanv@gmail.com>
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ net/dsa/slave.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/net/dsa/slave.c
++++ b/net/dsa/slave.c
+@@ -274,6 +274,9 @@ static int dsa_slave_port_attr_set(struc
+ 	struct dsa_port *dp = dsa_slave_to_port(dev);
+ 	int ret;
+ 
++	if (attr->orig_dev != dev)
++		return -EOPNOTSUPP;
++
+ 	switch (attr->id) {
+ 	case SWITCHDEV_ATTR_ID_PORT_STP_STATE:
+ 		ret = dsa_port_set_state(dp, attr->u.stp_state, trans);

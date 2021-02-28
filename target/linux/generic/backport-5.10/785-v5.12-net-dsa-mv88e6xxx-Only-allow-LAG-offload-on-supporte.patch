@@ -1,0 +1,58 @@
+From cc8a9873147f18126c7c8a30b7284a6fb69b7ab3 Mon Sep 17 00:00:00 2001
+From: Tobias Waldekranz <tobias@waldekranz.com>
+Date: Fri, 15 Jan 2021 13:52:59 +0100
+Subject: [PATCH] net: dsa: mv88e6xxx: Only allow LAG offload on supported
+ hardware
+
+There are chips that do have Global 2 registers, and therefore trunk
+mapping/mask tables are not available. Refuse the offload as early as
+possible on those devices.
+
+Fixes: 57e661aae6a8 ("net: dsa: mv88e6xxx: Link aggregation support")
+Signed-off-by: Tobias Waldekranz <tobias@waldekranz.com>
+Reviewed-by: Vladimir Oltean <olteanv@gmail.com>
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ drivers/net/dsa/mv88e6xxx/chip.c | 6 +++++-
+ drivers/net/dsa/mv88e6xxx/chip.h | 5 +++++
+ 2 files changed, 10 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/dsa/mv88e6xxx/chip.c
++++ b/drivers/net/dsa/mv88e6xxx/chip.c
+@@ -5353,9 +5353,13 @@ static bool mv88e6xxx_lag_can_offload(st
+ 				      struct net_device *lag,
+ 				      struct netdev_lag_upper_info *info)
+ {
++	struct mv88e6xxx_chip *chip = ds->priv;
+ 	struct dsa_port *dp;
+ 	int id, members = 0;
+ 
++	if (!mv88e6xxx_has_lag(chip))
++		return false;
++
+ 	id = dsa_lag_id(ds->dst, lag);
+ 	if (id < 0 || id >= ds->num_lag_ids)
+ 		return false;
+@@ -5697,7 +5701,7 @@ static int mv88e6xxx_register_switch(str
+ 	 * 5-bit port mode, which we do not support. 640k^W16 ought to
+ 	 * be enough for anyone.
+ 	 */
+-	ds->num_lag_ids = 16;
++	ds->num_lag_ids = mv88e6xxx_has_lag(chip) ? 16 : 0;
+ 
+ 	dev_set_drvdata(dev, ds);
+ 
+--- a/drivers/net/dsa/mv88e6xxx/chip.h
++++ b/drivers/net/dsa/mv88e6xxx/chip.h
+@@ -657,6 +657,11 @@ static inline bool mv88e6xxx_has_pvt(str
+ 	return chip->info->pvt;
+ }
+ 
++static inline bool mv88e6xxx_has_lag(struct mv88e6xxx_chip *chip)
++{
++	return !!chip->info->global2_addr;
++}
++
+ static inline unsigned int mv88e6xxx_num_databases(struct mv88e6xxx_chip *chip)
+ {
+ 	return chip->info->num_databases;

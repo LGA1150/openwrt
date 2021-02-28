@@ -1,0 +1,22 @@
+diff --git a/drivers/net/dsa/mv88e6xxx/chip.c b/drivers/net/dsa/mv88e6xxx/chip.c
+index 70ec17f3c300..5b1cb4bb30b9 100644
+--- a/drivers/net/dsa/mv88e6xxx/chip.c
++++ b/drivers/net/dsa/mv88e6xxx/chip.c
+@@ -1533,7 +1533,7 @@ static int mv88e6xxx_port_check_hw_vlan(struct dsa_switch *ds, int port,
+ 		return 0;
+ 
+ 	if (!vid_begin)
+-		return -EOPNOTSUPP;
++		return 0;
+ 
+ 	vlan.vid = vid_begin - 1;
+ 	vlan.valid = false;
+@@ -1977,7 +1977,7 @@ static void mv88e6xxx_port_vlan_add(struct dsa_switch *ds, int port,
+ 	u8 member;
+ 	u16 vid;
+ 
+-	if (!chip->info->max_vid)
++	if (!chip->info->max_vid || !vlan->vid_begin)
+ 		return;
+ 
+ 	if (dsa_is_dsa_port(ds, port) || dsa_is_cpu_port(ds, port))

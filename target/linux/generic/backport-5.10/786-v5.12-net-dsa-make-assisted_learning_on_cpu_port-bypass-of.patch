@@ -1,0 +1,114 @@
+From e32a6b370b9e6a091a48e57ac2b3e8b96b3401dc Mon Sep 17 00:00:00 2001
+From: Vladimir Oltean <vladimir.oltean@nxp.com>
+Date: Sat, 6 Feb 2021 00:02:20 +0200
+Subject: [PATCH] net: dsa: make assisted_learning_on_cpu_port bypass offloaded
+ LAG interfaces
+
+Given the following topology, and focusing only on Box A:
+
+         Box A
+         +----------------------------------+
+         | Board 1         br0              |
+         |             +---------+          |
+         |            /           \         |
+         |            |           |         |
+         |            |         bond0       |
+         |            |        +-----+      |
+         |192.168.1.1 |       /       \     |
+         |  eno0     swp0    swp1    swp2   |
+         +---|--------|-------|-------|-----+
+             |        |       |       |
+             +--------+       |       |
+               Cable          |       |
+                         Cable|       |Cable
+               Cable          |       |
+             +--------+       |       |
+             |        |       |       |
+         +---|--------|-------|-------|-----+
+         |  eno0     swp0    swp1    swp2   |
+         |192.168.1.2 |       \       /     |
+         |            |        +-----+      |
+         |            |         bond0       |
+         |            |           |         |
+         |            \           /         |
+         |             +---------+          |
+         | Board 2         br0              |
+         +----------------------------------+
+         Box B
+
+The assisted_learning_on_cpu_port logic will see that swp0 is bridged
+with a "foreign interface" (bond0) and will therefore install all
+addresses learnt by the software bridge towards bond0 (including the
+address of eno0 on Box B) as static addresses towards the CPU port.
+
+But that's not what we want - bond0 is not really a "foreign interface"
+but one we can offload including L2 forwarding from/towards it. So we
+need to refine our logic for assisted learning such that, whenever we
+see an address learnt on a non-DSA interface, we search through the tree
+for any port that offloads that non-DSA interface.
+
+Some confusion might arise as to why we search through the whole tree
+instead of just the local switch returned by dsa_slave_dev_lower_find.
+Or a different angle of the same confusion: why does
+dsa_slave_dev_lower_find(br_dev) return a single dp that's under br_dev
+instead of the whole list of bridged DSA ports?
+
+To answer the second question, it should be enough to install the static
+FDB entry on the CPU port of a single switch in the tree, because
+dsa_port_fdb_add uses DSA_NOTIFIER_FDB_ADD which ensures that all other
+switches in the tree get notified of that address, and add the entry
+themselves using dsa_towards_port().
+
+This should help understand the answer to the first question: the port
+returned by dsa_slave_dev_lower_find may not be on the same switch as
+the ports that offload the LAG. Nonetheless, if the driver implements
+.crosschip_lag_join and .crosschip_bridge_join as mv88e6xxx does, there
+still isn't any reason for trapping addresses learnt on the remote LAG
+towards the CPU, and we should prevent that.
+
+Signed-off-by: Vladimir Oltean <vladimir.oltean@nxp.com>
+Signed-off-by: Jakub Kicinski <kuba@kernel.org>
+---
+ net/dsa/dsa_priv.h | 13 +++++++++++++
+ net/dsa/slave.c    |  8 ++++++++
+ 2 files changed, 21 insertions(+)
+
+--- a/net/dsa/dsa_priv.h
++++ b/net/dsa/dsa_priv.h
+@@ -214,6 +214,19 @@ static inline bool dsa_port_offloads_net
+ 	return false;
+ }
+ 
++/* Returns true if any port of this tree offloads the given net_device */
++static inline bool dsa_tree_offloads_netdev(struct dsa_switch_tree *dst,
++					    struct net_device *dev)
++{
++	struct dsa_port *dp;
++
++	list_for_each_entry(dp, &dst->ports, list)
++		if (dsa_port_offloads_netdev(dp, dev))
++			return true;
++
++	return false;
++}
++
+ /* slave.c */
+ extern const struct dsa_device_ops notag_netdev_ops;
+ void dsa_slave_mii_bus_init(struct dsa_switch *ds);
+--- a/net/dsa/slave.c
++++ b/net/dsa/slave.c
+@@ -2196,6 +2196,14 @@ static int dsa_slave_switchdev_event(str
+ 
+ 			if (!dp->ds->assisted_learning_on_cpu_port)
+ 				return NOTIFY_DONE;
++
++			/* When the bridge learns an address on an offloaded
++			 * LAG we don't want to send traffic to the CPU, the
++			 * other ports bridged with the LAG should be able to
++			 * autonomously forward towards it.
++			 */
++			if (dsa_tree_offloads_netdev(dp->ds->dst, dev))
++				return NOTIFY_DONE;
+ 		}
+ 
+ 		if (!dp->ds->ops->port_fdb_add || !dp->ds->ops->port_fdb_del)
