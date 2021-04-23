@@ -89,7 +89,7 @@ ipset_r() {
 	for ip in $LAN_GM_IP; do ipset -! add gmlan $ip; done
 	case "$RUNMODE" in
 	router)
-		ipset -! -R <<-EOF || return 1
+		ipset -! -R <<-EOF
 			create ss_spec_wan_ac hash:net
 			$(gen_spec_iplist | sed -e "s/^/add ss_spec_wan_ac /")
 		EOF
