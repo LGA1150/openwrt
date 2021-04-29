@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+
+#include "qcom-ipq4019-r619ac.dtsi"
+
+/ {
+	model = "P&W R619AC (64M NAND)";
+	compatible = "p2w,r619ac-64m", "p2w,r619ac";
+
+	chosen {
+		bootargs-append = " root=/dev/ubiblock0_1 rootfstype=squashfs";
+	};
+};
+
+&blsp1_spi1 {
+	flash@0 {
+		partitions {
+			partition@180000 {
+				label = "unused";
+				reg = <0x180000 0xe80000>;
+			};
+		};
+	};
+};
+
+&nand {
+	status = "okay";
+
+	nand@0 {
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "rootfs";
+				reg = <0x0 0x4000000>;
+			};
+		};
+	};
+};
+
+&qpic_bam {
+	status = "okay";
+};

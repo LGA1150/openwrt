@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+
+#include "qcom-ipq4019-r619ac.dtsi"
+
+/ {
+	model = "P&W R619AC (32M NOR)";
+	compatible = "p2w,r619ac-32m", "p2w,r619ac";
+};
+
+&blsp1_spi1 {
+	flash@0 {
+		partitions {
+			partition@180000 {
+				compatible = "denx,fit";
+				label = "firmware";
+				reg = <0x180000 0x1e80000>;
+			};
+		};
+	};
+};
