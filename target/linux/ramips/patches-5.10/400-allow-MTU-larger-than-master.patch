@@ -1,0 +1,23 @@
+--- a/net/dsa/slave.c
++++ b/net/dsa/slave.c
+@@ -1485,8 +1485,18 @@ static int dsa_slave_change_mtu(struct n
+ 	mtu_limit = min_t(int, master->max_mtu, dev->max_mtu);
+ 	old_master_mtu = master->mtu;
+ 	new_master_mtu = largest_mtu + cpu_dp->tag_ops->overhead;
+-	if (new_master_mtu > mtu_limit)
+-		return -ERANGE;
++
++	/* The MTU limit of the switch may be larger than the master device,
++	 * and we expect packets larger than master's limit to pass through
++	 * the bridge hardware datapath, so if the master MTU is over limit
++	 * but the slave isn't, apply the limit to the master instead of
++	 * giving an error.
++	 */
++	if (new_master_mtu > mtu_limit) {
++		dev_warn(ds->dev, "MTU %d exceeds the master's limit %d, applying max instead\n",
++			new_master_mtu, master->max_mtu);
++		new_master_mtu = mtu_limit;
++	}
+ 
+ 	/* If the master MTU isn't over limit, there's no need to check the CPU
+ 	 * MTU, since that surely isn't either.
