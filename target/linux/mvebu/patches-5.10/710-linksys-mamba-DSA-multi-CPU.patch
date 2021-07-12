@@ -1,0 +1,19 @@
+--- a/arch/arm/boot/dts/armada-xp-linksys-mamba.dts
++++ b/arch/arm/boot/dts/armada-xp-linksys-mamba.dts
+@@ -407,6 +407,16 @@
+ 					full-duplex;
+ 				};
+ 			};
++
++			port@6 {
++				reg = <6>;
++				label = "cpu";
++				ethernet = <&eth1>;
++				fixed-link {
++					speed = <1000>;
++					full-duplex;
++				};
++			};
+ 		};
+ 	};
+ };
