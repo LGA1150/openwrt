@@ -1,0 +1,102 @@
+--- a/drivers/net/dsa/mv88e6xxx/chip.c
++++ b/drivers/net/dsa/mv88e6xxx/chip.c
+@@ -1210,9 +1210,12 @@ static u16 mv88e6xxx_port_vlan(struct mv88e6xxx_chip *chip, int dev, int port)
+ 		return 0;
+
+ 	/* Frames from DSA links and CPU ports can egress any local port */
+-	if (dp->type == DSA_PORT_TYPE_CPU || dp->type == DSA_PORT_TYPE_DSA)
++	if (dp->type == DSA_PORT_TYPE_DSA)
+ 		return mv88e6xxx_port_mask(chip);
+
++	if (dp->type == DSA_PORT_TYPE_CPU)
++		return mv88e6xxx_port_mask(chip) & ~dsa_cpu_ports(ds);
++
+ 	br = dp->bridge_dev;
+ 	pvlan = 0;
+
+@@ -1221,7 +1224,8 @@ static u16 mv88e6xxx_port_vlan(struct mv88e6xxx_chip *chip, int dev, int port)
+ 	 */
+ 	list_for_each_entry(dp, &dst->ports, list)
+ 		if (dp->ds == ds &&
+-		    (dp->type == DSA_PORT_TYPE_CPU ||
++		    ((dp->type == DSA_PORT_TYPE_CPU &&
++		     dp->index == dsa_upstream_port(chip->ds, port)) ||
+ 		     dp->type == DSA_PORT_TYPE_DSA ||
+ 		     (br && dp->bridge_dev == br)))
+ 			pvlan |= BIT(dp->index);
+@@ -1626,6 +1630,7 @@ static int mv88e6xxx_port_db_load_purge(struct mv88e6xxx_chip *chip, int port,
+ {
+ 	struct mv88e6xxx_atu_entry entry;
+ 	struct mv88e6xxx_vtu_entry vlan;
++	u16 portvec;
+ 	u16 fid;
+ 	int err;
+
+@@ -1663,16 +1668,19 @@ static int mv88e6xxx_port_db_load_purge(struct mv88e6xxx_chip *chip, int port,
+ 		ether_addr_copy(entry.mac, addr);
+ 	}
+
++	portvec = dsa_is_cpu_port(chip->ds, port) ?
++		  dsa_cpu_ports(chip->ds) : BIT(port);
++
+ 	/* Purge the ATU entry only if no port is using it anymore */
+ 	if (!state) {
+-		entry.portvec &= ~BIT(port);
++		entry.portvec &= ~portvec;
+ 		if (!entry.portvec)
+ 			entry.state = 0;
+ 	} else {
+ 		if (state == MV88E6XXX_G1_ATU_DATA_STATE_UC_STATIC)
+-			entry.portvec = BIT(port);
++			entry.portvec = portvec;
+ 		else
+-			entry.portvec |= BIT(port);
++			entry.portvec |= portvec;
+
+ 		entry.state = state;
+ 	}
+@@ -2533,6 +2541,7 @@ static int mv88e6xxx_setup_upstream_port(struct mv88e6xxx_chip *chip, int port)
+ 	}
+
+ 	if (port == upstream_port) {
++		dev_info(chip->dev, "Setting CPU port as port %i\n", port);
+ 		if (chip->info->ops->set_cpu_port) {
+ 			err = chip->info->ops->set_cpu_port(chip,
+ 							    upstream_port);
+@@ -2558,6 +2567,28 @@ static int mv88e6xxx_setup_upstream_port(struct mv88e6xxx_chip *chip, int port)
+ 	return 0;
+ }
+
++static int mv88e6xxx_port_change_cpu_port(struct dsa_switch *ds, int port,
++					  struct dsa_port *new_cpu_dp)
++{
++	struct mv88e6xxx_chip *chip = ds->priv;
++	int err;
++
++	mv88e6xxx_reg_lock(chip);
++
++	err = mv88e6xxx_setup_upstream_port(chip, port);
++	if (err)
++		goto unlock;
++
++	err = mv88e6xxx_port_vlan_map(chip, port);
++	if (err)
++		goto unlock;
++
++unlock:
++	mv88e6xxx_reg_unlock(chip);
++
++	return err;
++}
++
+ static int mv88e6xxx_setup_port(struct mv88e6xxx_chip *chip, int port)
+ {
+ 	struct dsa_switch *ds = chip->ds;
+@@ -5378,6 +5409,7 @@ static const struct dsa_switch_ops mv88e6xxx_switch_ops = {
+ 	.port_hwtstamp_get	= mv88e6xxx_port_hwtstamp_get,
+ 	.port_txtstamp		= mv88e6xxx_port_txtstamp,
+ 	.port_rxtstamp		= mv88e6xxx_port_rxtstamp,
++	.port_change_cpu_port	= mv88e6xxx_port_change_cpu_port,
+ 	.get_ts_info		= mv88e6xxx_get_ts_info,
+ 	.devlink_param_get	= mv88e6xxx_devlink_param_get,
+ 	.devlink_param_set	= mv88e6xxx_devlink_param_set,
