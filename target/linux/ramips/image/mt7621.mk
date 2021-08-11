@@ -42,6 +42,141 @@ define Build/haier-sim_wr1800k-factory
   rm -rf "$@.tmp" "$@.tmp.tgz"
 endef
 
+define Build/hatlab-gateboard-combined
+	rm -fR $@.boot
+	mkdir -p $@.boot
+
+	$(CP) $(IMAGE_KERNEL) $@.boot/linux.itb
+
+	( \
+		GPT_ROOTPART=`echo $(IMG_PART_DISKGUID) | sed 's/00$$/02/'`; \
+		echo \
+			"bootargs=console=ttyS0,115200 root=PARTUUID=$${GPT_ROOTPART}" \
+			> $@.boot/uEnv.txt; \
+	)
+
+	GUID=$(IMG_PART_DISKGUID) \
+	PADDING="1" \
+	SIGNATURE="$(IMG_PART_SIGNATURE)" \
+	$(SCRIPT_DIR)/gen_image_generic.sh \
+		$@ \
+		16 $@.boot \
+		$(CONFIG_TARGET_ROOTFS_PARTSIZE) $(IMAGE_ROOTFS) \
+		256
+
+	printf '\xeb\x48' | dd of="$@" conv=notrunc
+endef
+
+define Build/hatlab-gateboard-kernel
+	rm -fR $@.initrd
+	rm -fR $@.initrd.cpio
+
+	mkdir -p $@.initrd/{bin,dev,lib,proc,root,sys}
+	mkdir -p $@.initrd/lib/modules/$(LINUX_VERSION)
+
+	$(CP) ./initrd/init $@.initrd/
+	chmod +x $@.initrd/init
+
+	$(CP) $(TARGET_DIR)/bin/busybox $@.initrd/bin/
+	$(LN) busybox $@.initrd/bin/sh
+	$(LN) busybox $@.initrd/bin/ls
+	$(LN) busybox $@.initrd/bin/ln
+	$(LN) busybox $@.initrd/bin/mkdir
+	$(LN) busybox $@.initrd/bin/mount
+	$(LN) busybox $@.initrd/bin/umount
+	$(LN) busybox $@.initrd/bin/find
+	$(LN) busybox $@.initrd/bin/grep
+	$(LN) busybox $@.initrd/bin/sed
+	$(LN) busybox $@.initrd/bin/cat
+	$(LN) busybox $@.initrd/bin/mknod
+	$(LN) busybox $@.initrd/bin/switch_root
+
+	$(CP) $(TARGET_DIR)/sbin/kmodloader $@.initrd/bin/
+	$(LN) kmodloader $@.initrd/bin/modprobe
+
+	$(CP) $(TARGET_DIR)/usr/sbin/blkid $@.initrd/bin/
+
+	( \
+		KMODS=(ext4 crc32c_generic mtk_sd mmc_block xhci-mtk xhci-mtk-hcd usb-storage sd_mod); \
+		for kmod in "$${KMODS[@]}"; do \
+			$(CP) \
+				$(TARGET_DIR)/lib/modules/$(LINUX_VERSION)/$$kmod.ko \
+				$@.initrd/lib/modules/$(LINUX_VERSION)/; \
+		done; \
+	)
+
+	$(CP) $(TARGET_DIR)/lib/ld* $@.initrd/lib/
+	( \
+		FLAG_FILE="$@.initrd/.new"; \
+		touch "$$FLAG_FILE"; \
+		while [ -f "$$FLAG_FILE" ]; do \
+			rm "$$FLAG_FILE"; \
+			( \
+				export \
+					READELF=$(TARGET_CROSS)readelf \
+					OBJCOPY=$(TARGET_CROSS)objcopy \
+					XARGS="$(XARGS)"; \
+				$(SCRIPT_DIR)/gen-dependencies.sh "$@.initrd/"; \
+			) | while read DEPS; do \
+				if [ "$${DEPS##*.}" == "ko" ]; then \
+					SRC_PATHS=("$(TARGET_DIR)/lib/modules/$(LINUX_VERSION)"); \
+					TARGET_PATH="$@.initrd/lib/modules/$(LINUX_VERSION)"; \
+				else \
+					SRC_PATHS=("$(TARGET_DIR)/lib" "$(TARGET_DIR)/usr/lib"); \
+					TARGET_PATH="$@.initrd/lib"; \
+				fi; \
+				if [ ! -f "$$TARGET_PATH/$$DEPS" ]; then \
+					touch "$$FLAG_FILE"; \
+					for src in "$${SRC_PATHS[@]}"; do \
+						if [ -f "$$src/$$DEPS" ]; then \
+							cp "$$src/$$DEPS" "$$TARGET_PATH/$$DEPS"; \
+						fi; \
+					done; \
+				fi; \
+			done; \
+		done; \
+		rm -f "$$FLAG_FILE"; \
+	)
+
+	( \
+		if [ -f $(STAGING_DIR_HOST)/bin/cpio ]; then \
+			CPIO=$(STAGING_DIR_HOST)/bin/cpio; \
+		else \
+			CPIO="cpio"; \
+		fi; \
+		cd $@.initrd; \
+		find . | cpio -o -H newc -R 0:0 > $@.initrd.cpio; \
+	)
+
+	$(TOPDIR)/scripts/mkits.sh \
+		-D $(DEVICE_NAME) -o $@.its -k $@ \
+		-C gzip -d $(KDIR)/image-$(DEVICE_DTS).dtb \
+		-i $@.initrd.cpio \
+		-a $(KERNEL_LOADADDR) -e $(KERNEL_LOADADDR) \
+		-c config-1 -A $(LINUX_KARCH) -v $(LINUX_VERSION)
+
+	PATH=$(LINUX_DIR)/scripts/dtc:$(PATH) mkimage -f $@.its $@.new
+
+	@mv $@.new $@
+endef
+
+define Build/iodata-factory
+	$(eval fw_size=$(word 1,$(1)))
+	$(eval fw_type=$(word 2,$(1)))
+	$(eval product=$(word 3,$(1)))
+	$(eval factory_bin=$(word 4,$(1)))
+	if [ -e $(KDIR)/tmp/$(KERNEL_INITRAMFS_IMAGE) -a "$$(stat -c%s $@)" -lt "$(fw_size)" ]; then \
+		$(CP) $(KDIR)/tmp/$(KERNEL_INITRAMFS_IMAGE) $(factory_bin); \
+		$(STAGING_DIR_HOST)/bin/mksenaofw \
+			-r 0x30a -p $(product) -t $(fw_type) \
+			-e $(factory_bin) -o $(factory_bin).new; \
+		mv $(factory_bin).new $(factory_bin); \
+		$(CP) $(factory_bin) $(BIN_DIR)/; \
+	else \
+		echo "WARNING: initramfs kernel image too big, cannot generate factory image (actual $$(stat -c%s $@); max $(fw_size))" >&2; \
+	fi
+endef
+
 define Build/iodata-mstc-header
 	( \
 		data_size_crc="$$(dd if=$@ ibs=64 skip=1 2>/dev/null | gzip -c | \
@@ -1095,6 +1230,26 @@ define Device/haier_har-20s2u1
   DEVICE_MODEL := HAR-20S2U1
 endef
 TARGET_DEVICES += haier_har-20s2u1
+
+define Device/hatlab_gateboard-m1
+  $(Device/dsa-migration)
+  DEVICE_VENDOR := HATLab
+  DEVICE_MODEL := GateBoard-M1
+  DEVICE_PACKAGES := blkid kmod-usb3 kmod-usb-storage kmod-sdhci-mt7620 kmod-fs-ext4 kmod-usb-ledtrig-usbport kmod-hwmon-lm75 kmod-thermal kmod-hwmon-gpiofan kmod-rtc-pcf8563 kmod-sfp kmod-usb-net-rndis kmod-mt76 wpad
+  KERNEL := kernel-bin | gzip | hatlab-gateboard-kernel
+  IMAGE/kernel.itb := append-kernel
+  IMAGE/rootfs.img := append-rootfs | pad-to $(ROOTFS_PARTSIZE)
+  IMAGE/rootfs.img.gz := append-rootfs | pad-to $(ROOTFS_PARTSIZE) | gzip
+  IMAGE/combined.img := hatlab-gateboard-combined | append-metadata
+  IMAGE/combined.img.gz := hatlab-gateboard-combined | gzip | append-metadata
+  IMAGES := kernel.itb
+  ifeq ($(CONFIG_TARGET_IMAGES_GZIP),y)
+    IMAGES += rootfs.img.gz combined.img.gz
+  else
+    IMAGES += rootfs.img combined.img
+  endif
+endef
+TARGET_DEVICES += hatlab_gateboard-m1
 
 define Device/hilink_hlk-7621a-evb
   $(Device/dsa-migration)
