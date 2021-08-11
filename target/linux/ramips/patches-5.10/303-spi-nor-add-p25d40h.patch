@@ -1,0 +1,10 @@
+--- a/drivers/mtd/spi-nor/issi.c
++++ b/drivers/mtd/spi-nor/issi.c
+@@ -64,6 +64,7 @@ static const struct flash_info issi_part
+ 	{ "pm25lv512",   INFO(0,        0, 32 * 1024,    2, SECT_4K_PMC) },
+ 	{ "pm25lv010",   INFO(0,        0, 32 * 1024,    4, SECT_4K_PMC) },
+ 	{ "pm25lq032",   INFO(0x7f9d46, 0, 64 * 1024,   64, SECT_4K) },
++	{ "p25d40h", INFO(0x856013, 0, 64 * 1024,  8,  SECT_4K) },
+ };
+ 
+ static void issi_default_init(struct spi_nor *nor)
