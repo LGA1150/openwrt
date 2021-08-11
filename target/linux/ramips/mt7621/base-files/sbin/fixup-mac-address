@@ -13,6 +13,10 @@ case $board in
 		partname=factory
 		offset=$((0xe000))
 	;;
+	hatlab,gateboard-m1)
+		partname=factory
+		offset=$((0x22))
+	;;
 	*)
 		echo "Unsupported board"
 		exit 1

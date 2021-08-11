@@ -19,6 +19,10 @@ platform_check_image() {
 	buffalo,wsr-2533dhpls)
 		buffalo_check_image "$board" "$magic" "$1" || return 1
 		;;
+	hatlab,gateboard-m1)
+		hatlab_check_image "$1"
+		return $?;
+		;;
 	esac
 
 	return 0
@@ -213,6 +217,9 @@ platform_do_upgrade() {
 	zyxel,wsm20)
 		zyxel_mstc_upgrade_prepare
 		nand_do_upgrade "$1"
+		;;
+	hatlab,gateboard-m1)
+		hatlab_do_upgrade "$1"
 		;;
 	*)
 		default_do_upgrade "$1"
