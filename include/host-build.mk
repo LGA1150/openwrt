@@ -184,8 +184,6 @@ ifndef DUMP
     clean-build: host-clean-build
   endif
 
-  $(call check_download_integrity)
-
   $(_host_target)host-prepare: $(HOST_STAMP_PREPARED)
   $(_host_target)host-configure: $(HOST_STAMP_CONFIGURED)
   $(_host_target)host-compile: $(HOST_STAMP_BUILT) $(HOST_STAMP_INSTALLED) $(HOST_STAMP_PROGRAMS)

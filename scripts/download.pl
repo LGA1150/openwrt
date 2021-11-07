@@ -330,24 +330,6 @@ push @mirrors, 'https://sources.cdn.openwrt.org';
 push @mirrors, 'https://sources.openwrt.org';
 push @mirrors, 'https://mirror2.openwrt.org/sources';
 
-if (-f "$target/$filename") {
-	$hash_cmd and do {
-		if (system("cat '$target/$filename' | $hash_cmd > '$target/$filename.hash'")) {
-			die "Failed to generate hash for $filename\n";
-		}
-
-		my $sum = `cat "$target/$filename.hash"`;
-		$sum =~ /^(\w+)\s*/ or die "Could not generate file hash\n";
-		$sum = $1;
-
-		cleanup();
-		exit 0 if $sum eq $file_hash;
-
-		die "Hash of the local file $filename does not match (file: $sum, requested: $file_hash) - deleting download.\n";
-		unlink "$target/$filename";
-	};
-}
-
 $download_tool = select_tool();
 
 while (!-f "$target/$filename") {
