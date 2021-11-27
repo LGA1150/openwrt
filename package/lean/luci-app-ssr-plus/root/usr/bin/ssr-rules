@@ -84,7 +84,7 @@ flush_r() {
 ipset_r() {
 	[ -f "$IGNORE_LIST" ] && /usr/share/shadowsocksr/chinaipset.sh $IGNORE_LIST
 	$IPT -N SS_SPEC_WAN_AC
-	$IPT -I SS_SPEC_WAN_AC -p tcp ! --dport 53 -d $server -j RETURN
+	$IPT -A SS_SPEC_WAN_AC -p tcp ! --dport 53 -d $server -j RETURN
 	ipset -N gmlan hash:net 2>/dev/null
 	for ip in $LAN_GM_IP; do ipset -! add gmlan $ip; done
 	case "$RUNMODE" in
@@ -106,7 +106,7 @@ ipset_r() {
 		;;
 	oversea)
 		ipset -N oversea hash:net 2>/dev/null
-		$IPT -I SS_SPEC_WAN_AC -m set --match-set oversea dst -j SS_SPEC_WAN_FW
+		$IPT -A SS_SPEC_WAN_AC -m set --match-set oversea dst -j SS_SPEC_WAN_FW
 		$IPT -A SS_SPEC_WAN_AC -m set --match-set gmlan src -j SS_SPEC_WAN_FW
 		$IPT -A SS_SPEC_WAN_AC -m set --match-set china dst -j SS_SPEC_WAN_FW
 		;;
@@ -116,16 +116,16 @@ ipset_r() {
 	esac
 	ipset -N fplan hash:net 2>/dev/null
 	for ip in $LAN_FP_IP; do ipset -! add fplan $ip; done
-	$IPT -I SS_SPEC_WAN_AC -m set --match-set fplan src -j SS_SPEC_WAN_FW
+	$IPT -A SS_SPEC_WAN_AC -m set --match-set fplan src -j SS_SPEC_WAN_FW
 	ipset -N bplan hash:net 2>/dev/null
 	for ip in $LAN_BP_IP; do ipset -! add bplan $ip; done
-	$IPT -I SS_SPEC_WAN_AC -m set --match-set bplan src -j RETURN
+	$IPT -A SS_SPEC_WAN_AC -m set --match-set bplan src -j RETURN
 	ipset -N whitelist hash:net 2>/dev/null
 	ipset -N blacklist hash:net 2>/dev/null
-	$IPT -I SS_SPEC_WAN_AC -m set --match-set blacklist dst -j SS_SPEC_WAN_FW
-	$IPT -I SS_SPEC_WAN_AC -m set --match-set whitelist dst -j RETURN
+	$IPT -A SS_SPEC_WAN_AC -m set --match-set blacklist dst -j SS_SPEC_WAN_FW
+	$IPT -A SS_SPEC_WAN_AC -m set --match-set whitelist dst -j RETURN
 	if [ $(ipset list music -name -quiet | grep music) ]; then
-		$IPT -I SS_SPEC_WAN_AC -m set --match-set music dst -j RETURN 2>/dev/null
+		$IPT -A SS_SPEC_WAN_AC -m set --match-set music dst -j RETURN 2>/dev/null
 	fi
 	for ip in $WAN_BP_IP; do ipset -! add whitelist $ip; done
 	for ip in $WAN_FW_IP; do ipset -! add blacklist $ip; done
@@ -135,12 +135,12 @@ ipset_r() {
 		case "$SHUNT_PORT" in
 		0) ;;
 		1)
-			$IPT -I SS_SPEC_WAN_AC -p tcp -m set --match-set netflix dst -j REDIRECT --to-ports $local_port
+			$IPT -A SS_SPEC_WAN_AC -p tcp -m set --match-set netflix dst -j REDIRECT --to-ports $local_port
 			;;
 		*)
-			$IPT -I SS_SPEC_WAN_AC -p tcp -m set --match-set netflix dst -j REDIRECT --to-ports $SHUNT_PORT
+			$IPT -A SS_SPEC_WAN_AC -p tcp -m set --match-set netflix dst -j REDIRECT --to-ports $SHUNT_PORT
 			if [ "$SHUNT_PROXY" == "1" ]; then
-				$IPT -I SS_SPEC_WAN_AC -p tcp -d $SHUNT_IP -j REDIRECT --to-ports $local_port
+				$IPT -A SS_SPEC_WAN_AC -p tcp -d $SHUNT_IP -j REDIRECT --to-ports $local_port
 			else
 				ipset -! add whitelist $SHUNT_IP
 			fi
@@ -187,18 +187,18 @@ ac_rule() {
 		$(for ip in ${LAN_AC_IP:1}; do echo "add ss_spec_lan_ac $ip"; done)
 	EOF
 	if [ -z "$Interface" ]; then
-		$IPT -I PREROUTING 1 -p tcp $EXT_ARGS $MATCH_SET -m comment --comment "$TAG" -j SS_SPEC_WAN_AC
+		$IPT -A PREROUTING -p tcp $EXT_ARGS $MATCH_SET -m comment --comment "$TAG" -j SS_SPEC_WAN_AC
 	else
 		for name in $Interface; do
 			local IFNAME=$(uci -P /var/state get network.$name.ifname 2>/dev/null)
 			[ -z "$IFNAME" ] && IFNAME=$(uci -P /var/state get network.$name.device 2>/dev/null)
-			[ -n "$IFNAME" ] && $IPT -I PREROUTING 1 ${IFNAME:+-i $IFNAME} -p tcp $EXT_ARGS $MATCH_SET -m comment --comment "$TAG" -j SS_SPEC_WAN_AC
+			[ -n "$IFNAME" ] && $IPT -A PREROUTING ${IFNAME:+-i $IFNAME} -p tcp $EXT_ARGS $MATCH_SET -m comment --comment "$TAG" -j SS_SPEC_WAN_AC
 		done
 	fi
 
 	case "$OUTPUT" in
 	1)
-		$IPT -I OUTPUT 1 -p tcp $EXT_ARGS -m comment --comment "$TAG" -j SS_SPEC_WAN_AC
+		$IPT -A OUTPUT -p tcp $EXT_ARGS -m comment --comment "$TAG" -j SS_SPEC_WAN_AC
 		;;
 	2)
 		ipset -! -R <<-EOF || return 1
@@ -208,7 +208,7 @@ ac_rule() {
 		$IPT -N SS_SPEC_ROUTER && \
 		$IPT -A SS_SPEC_ROUTER -m set --match-set ssr_gen_router dst -j RETURN && \
 		$IPT -A SS_SPEC_ROUTER -j SS_SPEC_WAN_FW
-		$IPT -I OUTPUT 1 -p tcp -m comment --comment "$TAG" -j SS_SPEC_ROUTER
+		$IPT -A OUTPUT -p tcp -m comment --comment "$TAG" -j SS_SPEC_ROUTER
 		;;
 	esac
 	return $?
@@ -259,12 +259,12 @@ tp_rule() {
 		;;
 	esac
 	if [ -z "$Interface" ]; then
-		$ipt -I PREROUTING 1 -p udp $EXT_ARGS $MATCH_SET -m comment --comment "$TAG" -j SS_SPEC_TPROXY
+		$ipt -A PREROUTING -p udp $EXT_ARGS $MATCH_SET -m comment --comment "$TAG" -j SS_SPEC_TPROXY
 	else
 		for name in $Interface; do
 			local IFNAME=$(uci -P /var/state get network.$name.ifname 2>/dev/null)
 			[ -z "$IFNAME" ] && IFNAME=$(uci -P /var/state get network.$name.device 2>/dev/null)
-			[ -n "$IFNAME" ] && $ipt -I PREROUTING 1 ${IFNAME:+-i $IFNAME} -p udp $EXT_ARGS $MATCH_SET -m comment --comment "$TAG" -j SS_SPEC_TPROXY
+			[ -n "$IFNAME" ] && $ipt -A PREROUTING ${IFNAME:+-i $IFNAME} -p udp $EXT_ARGS $MATCH_SET -m comment --comment "$TAG" -j SS_SPEC_TPROXY
 		done
 	fi
 	return $?
@@ -304,7 +304,7 @@ gen_include() {
 	[ -n "$FWI" ] || return 0
 	extract_rules() {
 		echo "*$1"
-		iptables-save -t $1 | grep SS_SPEC_ | sed -e "s/^-A \(OUTPUT\|PREROUTING\)/-I \1 1/"
+		iptables-save -t $1 | grep SS_SPEC_
 		echo 'COMMIT'
 	}
 	cat <<-EOF >>$FWI

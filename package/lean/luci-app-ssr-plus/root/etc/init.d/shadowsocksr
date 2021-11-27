@@ -755,7 +755,7 @@ start_server() {
 		let server_count=server_count+1
 		if [ "$server_count" == "1" ]; then
 			if ! (iptables-save -t filter | grep SSR-SERVER-RULE >/dev/null); then
-				iptables -N SSR-SERVER-RULE && iptables -t filter -I INPUT -j SSR-SERVER-RULE
+				iptables -N SSR-SERVER-RULE && iptables -t filter -A INPUT -j SSR-SERVER-RULE
 			fi
 		fi
 		local type=$(uci_get_by_name $1 type)
@@ -783,7 +783,7 @@ start_server() {
 		fi
 		extract_rules() {
 			echo "*filter"
-			iptables-save -t filter | grep SSR-SERVER-RULE | sed -e "s/^-A INPUT/-I INPUT/"
+			iptables-save -t filter | grep SSR-SERVER-RULE
 			echo 'COMMIT'
 		}
 		cat <<-EOF >>$FWI
