@@ -125,6 +125,7 @@
 		};
 	};
 
+/*
 	sfp: sfp {
 		compatible = "sff,sfp";
 		i2c-bus = <&i2c>;
@@ -139,6 +140,7 @@
 		reg = <7>;
 		sfp = <&sfp>;
 	};
+*/
 };
 
 &ethernet {
@@ -156,10 +158,16 @@
 &gmac1 {
 	status = "okay";
 	label = "eth5";
-	phy-handle = <&ephy7>;
+	/*phy-handle = <&ephy7>;*/
 	nvmem-cells = <&macaddr_factory_22>;
 	nvmem-cell-names = "mac-address";
 	mac-address-increment = <5>;
+
+	fixed-link {
+		speed = <1000>;
+		full-duplex;
+		link-gpios = <&gpio 15 GPIO_ACTIVE_LOW>;
+	};
 };
 
 &spi0 {
