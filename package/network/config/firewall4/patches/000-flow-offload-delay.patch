@@ -1,0 +1,11 @@
+--- a/root/usr/share/firewall4/templates/ruleset.uc
++++ b/root/usr/share/firewall4/templates/ruleset.uc
+@@ -123,7 +123,7 @@ table inet fw4 {
+ 		type filter hook forward priority filter; policy {{ fw4.forward_policy(true) }};
+ 
+ {% if (length(flowtable_devices) > 0): %}
+-		meta l4proto { tcp, udp } flow offload @ft;
++		meta l4proto { tcp, udp } ct original packets ge 16 flow offload @ft;
+ {% endif %}
+ {% fw4.includes('chain-prepend', 'forward') %}
+ 		ct state established,related accept comment "!fw4: Allow forwarded established and related flows"
