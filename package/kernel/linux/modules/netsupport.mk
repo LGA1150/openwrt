@@ -438,6 +438,23 @@ endef
 
 $(eval $(call KernelPackage,fou6))
 
+define KernelPackage/bareudp
+  SUBMENU:=$(NETWORK_SUPPORT_MENU)
+  TITLE:=Bare UDP Encapsulation
+  DEPENDS:= \
+	+kmod-udptunnel4 \
+	+IPV6:kmod-udptunnel6
+  KCONFIG:=CONFIG_BAREUDP
+  FILES:=$(LINUX_DIR)/drivers/net/bareudp.ko
+  AUTOLOAD:=$(call AutoProbe,bareudp)
+endef
+
+define KernelPackage/bareudp/description
+ This adds a bare UDP tunnel module for tunnelling different kinds of traffic
+ like MPLS, IP, etc. inside a UDP tunnel.
+endef
+
+$(eval $(call KernelPackage,bareudp))
 
 define KernelPackage/ip6-tunnel
   SUBMENU:=$(NETWORK_SUPPORT_MENU)
