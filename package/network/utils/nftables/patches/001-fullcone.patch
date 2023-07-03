@@ -1,0 +1,83 @@
+--- a/src/json.c
++++ b/src/json.c
+@@ -1357,6 +1357,8 @@ static json_t *nat_flags_json(uint32_t f
+ 		json_array_append_new(array, json_string("random"));
+ 	if (flags & NF_NAT_RANGE_PROTO_RANDOM_FULLY)
+ 		json_array_append_new(array, json_string("fully-random"));
++	if (flags & NF_NAT_RANGE_FULLCONE)
++		json_array_append_new(array, json_string("fullcone"));
+ 	if (flags & NF_NAT_RANGE_PERSISTENT)
+ 		json_array_append_new(array, json_string("persistent"));
+ 	if (flags & NF_NAT_RANGE_NETMAP)
+--- a/src/parser_bison.y
++++ b/src/parser_bison.y
+@@ -598,6 +598,7 @@ int nft_lex(void *, void *, void *);
+ %token REDIRECT			"redirect"
+ %token RANDOM			"random"
+ %token FULLY_RANDOM		"fully-random"
++%token FULLCONE			"fullcone"
+ %token PERSISTENT		"persistent"
+ 
+ %token QUEUE			"queue"
+@@ -3977,6 +3978,7 @@ nf_nat_flags		:	nf_nat_flag
+ 
+ nf_nat_flag		:	RANDOM		{ $$ = NF_NAT_RANGE_PROTO_RANDOM; }
+ 			|	FULLY_RANDOM	{ $$ = NF_NAT_RANGE_PROTO_RANDOM_FULLY; }
++			|	FULLCONE	{ $$ = NF_NAT_RANGE_FULLCONE; }
+ 			|	PERSISTENT 	{ $$ = NF_NAT_RANGE_PERSISTENT; }
+ 			;
+ 
+--- a/src/parser_json.c
++++ b/src/parser_json.c
+@@ -2000,6 +2000,7 @@ static int json_parse_nat_flag(struct js
+ 	} flag_tbl[] = {
+ 		{ "random", NF_NAT_RANGE_PROTO_RANDOM },
+ 		{ "fully-random", NF_NAT_RANGE_PROTO_RANDOM_FULLY },
++		{ "fullcone", NF_NAT_RANGE_FULLCONE },
+ 		{ "persistent", NF_NAT_RANGE_PERSISTENT },
+ 		{ "netmap", NF_NAT_RANGE_NETMAP },
+ 	};
+--- a/src/statement.c
++++ b/src/statement.c
+@@ -670,6 +670,11 @@ static void print_nf_nat_flags(uint32_t
+ 		delim = ",";
+ 	}
+ 
++	if (flags & NF_NAT_RANGE_FULLCONE) {
++		nft_print(octx, "%sfullcone", delim);
++		delim = ",";
++	}
++
+ 	if (flags & NF_NAT_RANGE_PERSISTENT)
+ 		nft_print(octx, "%spersistent", delim);
+ }
+--- a/include/linux/netfilter/nf_nat.h
++++ b/include/linux/netfilter/nf_nat.h
+@@ -13,6 +13,8 @@
+ #define NF_NAT_RANGE_PROTO_OFFSET		(1 << 5)
+ #define NF_NAT_RANGE_NETMAP			(1 << 6)
+ 
++#define NF_NAT_RANGE_FULLCONE			(1 << 10)
++
+ #define NF_NAT_RANGE_PROTO_RANDOM_ALL		\
+ 	(NF_NAT_RANGE_PROTO_RANDOM | NF_NAT_RANGE_PROTO_RANDOM_FULLY)
+ 
+@@ -20,7 +22,7 @@
+ 	(NF_NAT_RANGE_MAP_IPS | NF_NAT_RANGE_PROTO_SPECIFIED |	\
+ 	 NF_NAT_RANGE_PROTO_RANDOM | NF_NAT_RANGE_PERSISTENT |	\
+ 	 NF_NAT_RANGE_PROTO_RANDOM_FULLY | NF_NAT_RANGE_PROTO_OFFSET | \
+-	 NF_NAT_RANGE_NETMAP)
++	 NF_NAT_RANGE_NETMAP | NF_NAT_RANGE_FULLCONE)
+ 
+ struct nf_nat_ipv4_range {
+ 	unsigned int			flags;
+--- a/src/scanner.l
++++ b/src/scanner.l
+@@ -464,6 +464,7 @@ addrstring	({macaddr}|{ip4addr}|{ip6addr
+ "random"		{ return RANDOM; }
+ <SCANSTATE_STMT_NAT>{
+ 	"fully-random"		{ return FULLY_RANDOM; }
++	"fullcone"		{ return FULLCONE; }
+ 	"persistent"		{ return PERSISTENT; }
+ 	"port"			{ return PORT; }
+ }
