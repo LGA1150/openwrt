@@ -62,6 +62,11 @@ ifeq ($(BUILD_VARIANT),json)
   CONFIGURE_ARGS += --with-json
 endif
 
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	$(RM) $(PKG_BUILD_DIR)/src/parser_bison.c $(PKG_BUILD_DIR)/src/scanner.c
+endef
+
 define Build/InstallDev
 	$(INSTALL_DIR) $(1)/usr/lib $(1)/usr/include
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/*.so* $(1)/usr/lib/
