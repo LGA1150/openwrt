@@ -1,0 +1,12 @@
+--- a/net/ipv4/udp_tunnel_core.c
++++ b/net/ipv4/udp_tunnel_core.c
+@@ -21,6 +21,9 @@ int udp_sock_create4(struct net *net, st
+ 	if (err < 0)
+ 		goto error;
+ 
++	sock->sk->sk_reuse = SK_CAN_REUSE;
++	sock->sk->sk_reuseport = 1;
++
+ 	if (cfg->bind_ifindex) {
+ 		err = sock_bindtoindex(sock->sk, cfg->bind_ifindex, true);
+ 		if (err < 0)
