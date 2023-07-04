@@ -1,0 +1,20 @@
+--- a/root/usr/share/firewall4/templates/zone-masq.uc
++++ b/root/usr/share/firewall4/templates/zone-masq.uc
+@@ -10,4 +10,5 @@ meta nfproto {{ fw4.nfproto(family) }} {
+ 	{{ fw4.ipproto(family) }} daddr != {{ fw4.set(map(daddrs[1], fw4.cidr)) }} {%+ endif -%}
+ {%+ for (let a in (daddrs ? daddrs[2] : [])): -%}
+ 	{{ fw4.ipproto(family) }} daddr & {{ a.mask }} {{ a.invert ? '!=' : '==' }} {{ a.addr }} {%+ endfor -%}
+-masquerade comment "!fw4: Masquerade {{ fw4.nfproto(family, true) }} {{ zone.name }} traffic"
++masquerade {%+ if (zone.fullcone): -%} fullcone {%+ endif -%}
++comment "!fw4: Masquerade {{ fw4.nfproto(family, true) }} {{ zone.name }} traffic"
+--- a/root/usr/share/ucode/fw4.uc
++++ b/root/usr/share/ucode/fw4.uc
+@@ -1986,6 +1986,8 @@ return {
+ 
+ 			masq6: [ "bool" ],
+ 
++			fullcone: [ "bool" ],
++
+ 			extra: [ "string", null, UNSUPPORTED ],
+ 			extra_src: [ "string", null, UNSUPPORTED ],
+ 			extra_dest: [ "string", null, UNSUPPORTED ],
