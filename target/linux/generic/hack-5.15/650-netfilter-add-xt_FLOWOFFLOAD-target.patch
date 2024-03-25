@@ -98,7 +98,7 @@ Signed-off-by: Felix Fietkau <nbd@nbd.name>
  obj-$(CONFIG_NETFILTER_XT_TARGET_LED) += xt_LED.o
 --- /dev/null
 +++ b/net/netfilter/xt_FLOWOFFLOAD.c
-@@ -0,0 +1,702 @@
+@@ -0,0 +1,711 @@
 +/*
 + * Copyright (C) 2018-2021 Felix Fietkau <nbd@nbd.name>
 + *
@@ -536,12 +536,21 @@ Signed-off-by: Felix Fietkau <nbd@nbd.name>
 +	switch (xt_family(par)) {
 +	case NFPROTO_IPV4:
 +		fl.u.ip4.daddr = ct->tuplehash[dir].tuple.src.u3.ip;
++		fl.u.ip4.saddr = ct->tuplehash[!dir].tuple.src.u3.ip;
 +		fl.u.ip4.flowi4_oif = xt_in(par)->ifindex;
++		fl.u.ip4.flowi4_iif = this_dst->dev->ifindex;
++		fl.u.ip4.flowi4_tos = RT_TOS(ip_hdr(skb)->tos);
++		fl.u.ip4.flowi4_mark = skb->mark;
++		fl.u.ip4.flowi4_flags = FLOWI_FLAG_ANYSRC;
 +		break;
 +	case NFPROTO_IPV6:
-+		fl.u.ip6.saddr = ct->tuplehash[!dir].tuple.dst.u3.in6;
 +		fl.u.ip6.daddr = ct->tuplehash[dir].tuple.src.u3.in6;
++		fl.u.ip6.saddr = ct->tuplehash[!dir].tuple.src.u3.in6;
 +		fl.u.ip6.flowi6_oif = xt_in(par)->ifindex;
++		fl.u.ip6.flowi6_iif = this_dst->dev->ifindex;
++		fl.u.ip6.flowlabel = ip6_flowinfo(ipv6_hdr(skb));
++		fl.u.ip6.flowi6_mark = skb->mark;
++		fl.u.ip6.flowi6_flags = FLOWI_FLAG_ANYSRC;
 +		break;
 +	}
 +
