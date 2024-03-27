@@ -1,0 +1,26 @@
+--- a/arch/riscv/errata/thead/errata.c
++++ b/arch/riscv/errata/thead/errata.c
+@@ -59,10 +59,6 @@ static bool errata_probe_pmu(unsigned in
+ 	if (!IS_ENABLED(CONFIG_ERRATA_THEAD_PMU))
+ 		return false;
+ 
+-	/* target-c9xx cores report arch_id and impid as 0 */
+-	if (arch_id != 0 || impid != 0)
+-		return false;
+-
+ 	if (stage == RISCV_ALTERNATIVES_EARLY_BOOT)
+ 		return false;
+ 
+--- a/drivers/perf/riscv_pmu_sbi.c
++++ b/drivers/perf/riscv_pmu_sbi.c
+@@ -811,9 +811,7 @@ static int pmu_sbi_setup_irqs(struct ris
+ 		riscv_pmu_irq_num = RV_IRQ_PMU;
+ 		riscv_pmu_use_irq = true;
+ 	} else if (IS_ENABLED(CONFIG_ERRATA_THEAD_PMU) &&
+-		   riscv_cached_mvendorid(0) == THEAD_VENDOR_ID &&
+-		   riscv_cached_marchid(0) == 0 &&
+-		   riscv_cached_mimpid(0) == 0) {
++		   riscv_cached_mvendorid(0) == THEAD_VENDOR_ID) {
+ 		riscv_pmu_irq_num = THEAD_C9XX_RV_IRQ_PMU;
+ 		riscv_pmu_use_irq = true;
+ 	}
