@@ -1,0 +1,24 @@
+config CRYPTO_DEV_SIFLOWER
+	tristate "Support for Siflower cryptographic acceleration engine"
+	help
+	  Siflower cryptographic acceleration engine.
+
+config CRYPTO_DEV_SIFLOWER_AES
+	bool "Enable AES"
+	depends on CRYPTO_DEV_SIFLOWER
+	select CRYPTO_AEAD
+	select CRYPTO_AES
+	select CRYPTO_CTR
+
+config CRYPTO_DEV_SIFLOWER_SHA
+	bool "Enable SHA"
+	depends on CRYPTO_DEV_SIFLOWER
+
+config CRYPTO_DEV_SIFLOWER_RSA
+	bool "Enable RSA"
+	depends on CRYPTO_DEV_SIFLOWER
+	select CRYPTO_RSA
+
+config CRYPTO_DEV_SIFLOWER_MD5
+	bool "Enable MD5"
+	depends on CRYPTO_DEV_SIFLOWER
