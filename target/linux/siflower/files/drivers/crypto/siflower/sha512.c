@@ -522,8 +522,8 @@ sf_ce_sha512_digest(struct ahash_request *req)
 	memset(reqctx->block + 1, 0, pad_len - 1);
 
 	/* Append length */
-	put_unaligned_be64((req->nbytes * BITS_PER_BYTE) >> 64, reqctx->block + pad_len);
-	put_unaligned_be64(req->nbytes * BITS_PER_BYTE, reqctx->block + pad_len + sizeof(u64));
+	put_unaligned_be64(0, reqctx->block + pad_len);
+	put_unaligned_be64((u64)req->nbytes * BITS_PER_BYTE, reqctx->block + pad_len + sizeof(u64));
 
 	pad_len += sizeof(__uint128_t);
 	reqctx->block_len = pad_len;

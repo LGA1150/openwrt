@@ -476,7 +476,7 @@ sf_ce_sha1_digest(struct ahash_request *req)
 	memset(reqctx->block + 1, 0, pad_len - 1);
 
 	/* Append length */
-	put_unaligned_be64(req->nbytes * BITS_PER_BYTE, reqctx->block + pad_len);
+	put_unaligned_be64((u64)req->nbytes * BITS_PER_BYTE, reqctx->block + pad_len);
 
 	pad_len += sizeof(u64);
 	reqctx->block_len = pad_len;

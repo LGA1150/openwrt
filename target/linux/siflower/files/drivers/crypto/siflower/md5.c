@@ -475,7 +475,7 @@ sf_ce_md5_digest(struct ahash_request *req)
 	memset(reqctx->block + 1, 0, pad_len - 1);
 
 	/* Append length */
-	put_unaligned_le64(req->nbytes * BITS_PER_BYTE, reqctx->block + pad_len);
+	put_unaligned_le64((u64)req->nbytes * BITS_PER_BYTE, reqctx->block + pad_len);
 
 	pad_len += sizeof(u64);
 	reqctx->block_len = pad_len;
