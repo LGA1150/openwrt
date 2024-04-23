@@ -80,7 +80,7 @@ struct sf_ce_chan {
 	struct crypto_async_request **areqs;
 	unsigned int cur_tx;
 	unsigned int cur_rx;
-	unsigned int dirty_tx;
+//	unsigned int dirty_tx;
 	unsigned int dirty_rx;
 //	struct crypto_engine *engine;
 	spinlock_t ring_lock;
@@ -149,8 +149,8 @@ struct sf_ce_aes_reqctx {
 	dma_addr_t misal_phys;
 	void *tmp_buf;
 	dma_addr_t tmp_buf_phys;
-	unsigned int misalign_count;
-	u8 misalign_buffer[8][DMA_RX_ALIGN] __aligned(ARCH_DMA_MINALIGN);
+//	unsigned int misalign_count;
+//	u8 misalign_buffer[8][DMA_RX_ALIGN] __aligned(ARCH_DMA_MINALIGN);
 };
 
 struct sf_ce_aes_gcm_reqctx {
@@ -164,8 +164,8 @@ struct sf_ce_aes_gcm_reqctx {
 	dma_addr_t misal_phys;
 	void *tmp_buf;
 	dma_addr_t tmp_buf_phys;
-	unsigned int misalign_count;
-	u8 misalign_buffer[8][DMA_RX_ALIGN] __aligned(ARCH_DMA_MINALIGN);
+//	unsigned int misalign_count;
+//	u8 misalign_buffer[8][DMA_RX_ALIGN] __aligned(ARCH_DMA_MINALIGN);
 };
 
 struct sf_ce_aes_ccm_reqctx {
@@ -179,8 +179,8 @@ struct sf_ce_aes_ccm_reqctx {
 	dma_addr_t misal_phys;
 	void *tmp_buf;
 	dma_addr_t tmp_buf_phys;
-	unsigned int misalign_count;
-	u8 misalign_buffer[8][DMA_RX_ALIGN] __aligned(ARCH_DMA_MINALIGN);
+//	unsigned int misalign_count;
+//	u8 misalign_buffer[8][DMA_RX_ALIGN] __aligned(ARCH_DMA_MINALIGN);
 };
 
 struct sf_ce_ahash_ctx {
@@ -326,7 +326,9 @@ struct sf_ce_sha512_state {
 #define CE_DMA_INT_DEFAULT_TX	(CE_TBUE | CE_TIE)
 #define CE_DMA_CH_Rx_WATCHDOG(x)	(0x0000313c + 0x80 * (x))
 #define CE_RWT			GENMASK(7, 0)
+#define CE_DMA_CH_CUR_TxDESC_LADDR(x)	(0x00003144 + 0x80 * (x))
 #define CE_DMA_CH_CUR_RxDESC_LADDR(x)	(0x0000314c + 0x80 * (x))
+#define CE_DMA_CH_CUR_TxBUFF_LADDR(x)	(0x00003154 + 0x80 * (x))
 #define CE_DMA_CH_CUR_RxBUFF_LADDR(x)	(0x0000315c + 0x80 * (x))
 #define CE_DMA_CH_STATUS(x)		(0x00003160 + 0x80 * (x))
 #define CE_NIS			BIT(15)
