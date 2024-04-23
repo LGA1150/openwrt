@@ -15,7 +15,7 @@ sf_ce_irq_bh(unsigned long data)
 	struct device *dev = priv->dev;
 	unsigned int i;
 
-	for (i = ch->dirty_rx; i != ch->cur_rx; i = (i + 1) % DMA_RING_SIZE) {
+	for (i = ch->dirty_rx; i != READ_ONCE(ch->cur_rx); i = (i + 1) % DMA_RING_SIZE) {
 		struct crypto_async_request *areq;
 		enum crypt_algo alg;
 		int ret = 0;
@@ -139,7 +139,7 @@ sf_ce_irq_bh(unsigned long data)
 			dma_unmap_single(dev, reqctx->iv_phys, AES_BLOCK_SIZE, DMA_TO_DEVICE);
 
 			/* increase iv by blocks */
-			if (1) {
+			{
 #if defined(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS) && defined(CONFIG_CC_HAS_INT128)
 				__uint128_t iv128;
 
