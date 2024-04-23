@@ -10,37 +10,6 @@
  * Rx:
  * Both Start Address and End Address (Start Address + length) must be 8-byte
  * aligned.
- *
- * If the Start Address is misaligned, DMA will overwrite the misaligned
- * portion "[ALIGN_DOWN(addr, 8), addr)" with dummy data, causing data loss.
- *
- * If the End Address is misaligned, and the buffer is the last buffer (no
- * more Rx data), DMA will overwrite the misaligned portion
- * "[addr, ALIGN(addr, 8))" with dummy data, causing data loss.
- *
- * If the End Address is misaligned, and the buffer is NOT the last buffer,
- * DMA will overwrite the misaligned portion "[addr, ALIGN(addr, 8))" with
- * valid data which should have belonged to the next buffer, causing data
- * loss and further data misalignment to the following buffers.
- *
- * To workaround this, we use some temporary 8-byte buffers to handle Start and
- * End address misalignment. Say we have a target Rx buffer of 1012 bytes,
- * starting at address 0x4:
- *
- * 0   5   8         ...        1016  1017 1024    --- offset
- * |   | M | A | A | ... | A | A |  M  |    |
- *
- * The Start Address misalignment offset is 3 bytes (8-5).
- * The End Address misalignment offset is 7 bytes (1024-1017).
- * We use two temporary 8-byte aligned buffers and writes its
- * "address + misalignment offset" to the Rx descriptor:
- *
- * Rx buffer 1 : addr: temp buffer 1 addr + 5, size: 3
- * Rx buffer 2 : addr: target buffer addr + 8, size: 1008
- * Rx buffer 3 : addr: temp buffer 2 addr + 7, size: 1
- *
- * After Rx is done, we copy the content of the temp buffers back to the target
- * buffer.
  */
 
 static bool sf_ce_need_temp_buffer(struct scatterlist *dst, int nents)
@@ -108,8 +77,8 @@ sf_ce_aes_ctr_op(struct skcipher_request *req, bool is_decrypt)
 
 	reqctx->tmp_buf = NULL;
 	reqctx->tmp_buf_phys = 0;
-	reqctx->misalign_count = 0;
-	memset(reqctx->misalign_buffer, 0xcc, sizeof(reqctx->misalign_buffer));
+//	reqctx->misalign_count = 0;
+//	memset(reqctx->misalign_buffer, 0xcc, sizeof(reqctx->misalign_buffer));
 	/* req->iv may not be physically contiguous, so copy it to reqctx,
 	 * which is contiguous and can be used for DMA.
 	 */
@@ -120,31 +89,30 @@ sf_ce_aes_ctr_op(struct skcipher_request *req, bool is_decrypt)
 		void *tmp_buf;
 		gfp_t flags;
 
-		if (unlikely(reqctx->ssg_len != dma_map_sg(dev, req->src,
-							   reqctx->ssg_len,
-							   DMA_TO_DEVICE)))
+		if (unlikely(!dma_map_sg(dev, req->src, reqctx->ssg_len,
+					 DMA_TO_DEVICE)))
 			return -ENOMEM;
 
 		flags = (req->base.flags & CRYPTO_TFM_REQ_MAY_SLEEP) ?
 			GFP_KERNEL : GFP_ATOMIC;
 		tmp_buf = kmalloc(ALIGN(req->cryptlen, AES_BLOCK_SIZE), flags);
-		if (!tmp_buf)
+		if (unlikely(!tmp_buf))
 			return -ENOMEM;
 
 		reqctx->tmp_buf = tmp_buf;
 		reqctx->tmp_buf_phys = dma_map_single(dev, tmp_buf, req->cryptlen, DMA_FROM_DEVICE);
 	} else if (req->src == req->dst) {
-		if (unlikely(reqctx->ssg_len != dma_map_sg(dev, req->src,
+		if (unlikely(!dma_map_sg(dev, req->src,
 							   reqctx->ssg_len,
 							   DMA_BIDIRECTIONAL)))
 			return -ENOMEM;
 	} else {
-		if (unlikely(reqctx->ssg_len != dma_map_sg(dev, req->src,
+		if (unlikely(!dma_map_sg(dev, req->src,
 							   reqctx->ssg_len,
 							   DMA_TO_DEVICE)))
 			return -ENOMEM;
 
-		if (unlikely(reqctx->dsg_len != dma_map_sg(dev, req->dst,
+		if (unlikely(!dma_map_sg(dev, req->dst,
 							   reqctx->dsg_len,
 							   DMA_FROM_DEVICE)))
 			return -ENOMEM;
@@ -155,11 +123,16 @@ sf_ce_aes_ctr_op(struct skcipher_request *req, bool is_decrypt)
 		return ret;
 
 	reqctx->iv_phys = iv_phys;
-	reqctx->misal_phys = dma_map_single(priv->dev, reqctx->misalign_buffer, sizeof(reqctx->misalign_buffer), DMA_FROM_DEVICE);
+//	reqctx->misal_phys = dma_map_single(priv->dev, reqctx->misalign_buffer, sizeof(reqctx->misalign_buffer), DMA_FROM_DEVICE);
 	nbytes = req->cryptlen;
 
+	spin_lock_bh(&ch->ring_lock);
 	tx = ch->dma_tx;
 	cur_tx = ch->cur_tx;
+
+	// eval free tx desc count
+	if (READ_ONCE(tx[(cur_tx + 1 + DIV_ROUND_UP(reqctx->ssg_len, 2)) % DMA_RING_SIZE].des3) & CE_RDES3_OWN)
+		goto cleanup;
 
 	//1: key and iv
 	tx[cur_tx].des0 = ctx->key_phys; // buffer1: key
@@ -226,7 +199,7 @@ sf_ce_aes_ctr_op(struct skcipher_request *req, bool is_decrypt)
 	ch->cur_tx = cur_tx;
 
 	rx = ch->dma_rx;
-	cur_rx = ch->cur_rx;
+	cur_rx = READ_ONCE(ch->cur_rx);
 	// prepare rx desc
 
 	if (reqctx->tmp_buf_phys) {
@@ -347,13 +320,19 @@ sf_ce_aes_ctr_op(struct skcipher_request *req, bool is_decrypt)
 		WARN_ON(reqctx->misalign_count > ARRAY_SIZE(reqctx->misalign_buffer));
 	}
 #endif
-	ch->cur_rx = cur_rx;
+	WRITE_ONCE(ch->cur_rx, cur_rx);
+	spin_unlock_bh(&ch->ring_lock);
 	/* inform the DMA for the new data */
 	dma_wmb();
 	reg_write(priv, CE_DMA_CH_RxDESC_TAIL_LPTR(ch->ch_num), ch->dma_rx_phy + sizeof(struct sf_ce_desc) * cur_rx);
 	reg_write(priv, CE_DMA_CH_TxDESC_TAIL_LPTR(ch->ch_num), ch->dma_tx_phy + sizeof(struct sf_ce_desc) * cur_tx);
 
 	return -EINPROGRESS;
+cleanup:
+	// TODO: handle CRYPTO_TFM_REQ_MAY_BACKLOG
+	spin_unlock_bh(&ch->ring_lock);
+	kfree(reqctx->tmp_buf);
+	return -EBUSY;
 }
 
 static int
@@ -524,7 +503,7 @@ sf_ce_aes_gcm_op(struct aead_request *req, bool is_decrypt)
 	reqctx->tmp_buf = NULL;
 	reqctx->tmp_buf_phys = 0;
 	nbytes = is_decrypt ? req->cryptlen : req->cryptlen + 16;
-	reqctx->misalign_count = 0;
+//	reqctx->misalign_count = 0;
 	/* req->iv may not be physically contiguous, so copy it to reqctx,
 	 * which is contiguous and can be used for DMA.
 	 */
@@ -595,7 +574,7 @@ sf_ce_aes_gcm_op(struct aead_request *req, bool is_decrypt)
 		return ret;
 
 	reqctx->iv_extra_phys = iv_extra_phys;
-	reqctx->misal_phys = dma_map_single(priv->dev, reqctx->misalign_buffer, sizeof(reqctx->misalign_buffer), DMA_FROM_DEVICE);
+//	reqctx->misal_phys = dma_map_single(priv->dev, reqctx->misalign_buffer, sizeof(reqctx->misalign_buffer), DMA_FROM_DEVICE);
 	pl = req->cryptlen + ALIGN(req->assoclen, AES_BLOCK_SIZE);
 
 	tx = ch->dma_tx;
@@ -1137,7 +1116,7 @@ sf_ce_aes_ccm_op(struct aead_request *req, bool is_decrypt)
 	reqctx->tmp_buf_phys = 0;
 
 	nbytes = is_decrypt ? req->cryptlen : req->cryptlen + ctx->taglen;
-	reqctx->misalign_count = 0;
+//	reqctx->misalign_count = 0;
 	/* req->iv may not be physically contiguous, so copy it to reqctx,
 	 * which is contiguous and can be used for DMA.
 	 */
@@ -1198,7 +1177,7 @@ sf_ce_aes_ccm_op(struct aead_request *req, bool is_decrypt)
 		return ret;
 
 	reqctx->iv_extra_phys = iv_extra_phys;
-	reqctx->misal_phys = dma_map_single(priv->dev, reqctx->misalign_buffer, sizeof(reqctx->misalign_buffer), DMA_FROM_DEVICE);
+//	reqctx->misal_phys = dma_map_single(priv->dev, reqctx->misalign_buffer, sizeof(reqctx->misalign_buffer), DMA_FROM_DEVICE);
 	pl = req->cryptlen + req->assoclen;
 
 	tx = ch->dma_tx;
