@@ -86,12 +86,13 @@ static int sf_gpio_direction_output(struct gpio_chip *gc, unsigned int offset,
 static int sf_gpio_set_debounce(struct gpio_chip *gc, unsigned int offset,
 				u32 debounce)
 {
-	unsigned long freq = clk_get_rate(priv->clk);
 	struct sf_gpio *priv = to_sf_gpio(gc);
+	unsigned long freq = clk_get_rate(priv->clk);
 	u64 mul;
 
 	/* (ICR + 1) * IFR = debounce_us * clkfreq_mhz / 4 */
-	mul = (u64)debounce * freq / 1000000 / 4;
+	mul = (u64)debounce * freq;
+	do_div(mul, 1000000 * 4);
 	if (mul > 0xff00)
 		return -EINVAL;
 
