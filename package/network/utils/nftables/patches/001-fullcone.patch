@@ -1,6 +1,6 @@
 --- a/src/json.c
 +++ b/src/json.c
-@@ -1357,6 +1357,8 @@ static json_t *nat_flags_json(uint32_t f
+@@ -1403,6 +1403,8 @@ static json_t *nat_flags_json(uint32_t f
  		json_array_append_new(array, json_string("random"));
  	if (flags & NF_NAT_RANGE_PROTO_RANDOM_FULLY)
  		json_array_append_new(array, json_string("fully-random"));
@@ -11,7 +11,7 @@
  	if (flags & NF_NAT_RANGE_NETMAP)
 --- a/src/parser_bison.y
 +++ b/src/parser_bison.y
-@@ -598,6 +598,7 @@ int nft_lex(void *, void *, void *);
+@@ -646,6 +646,7 @@ int nft_lex(void *, void *, void *);
  %token REDIRECT			"redirect"
  %token RANDOM			"random"
  %token FULLY_RANDOM		"fully-random"
@@ -19,7 +19,7 @@
  %token PERSISTENT		"persistent"
  
  %token QUEUE			"queue"
-@@ -3977,6 +3978,7 @@ nf_nat_flags		:	nf_nat_flag
+@@ -4077,6 +4078,7 @@ nf_nat_flags		:	nf_nat_flag
  
  nf_nat_flag		:	RANDOM		{ $$ = NF_NAT_RANGE_PROTO_RANDOM; }
  			|	FULLY_RANDOM	{ $$ = NF_NAT_RANGE_PROTO_RANDOM_FULLY; }
@@ -29,7 +29,7 @@
  
 --- a/src/parser_json.c
 +++ b/src/parser_json.c
-@@ -2000,6 +2000,7 @@ static int json_parse_nat_flag(struct js
+@@ -2121,6 +2121,7 @@ static int json_parse_nat_flag(struct js
  	} flag_tbl[] = {
  		{ "random", NF_NAT_RANGE_PROTO_RANDOM },
  		{ "fully-random", NF_NAT_RANGE_PROTO_RANDOM_FULLY },
@@ -39,7 +39,7 @@
  	};
 --- a/src/statement.c
 +++ b/src/statement.c
-@@ -670,6 +670,11 @@ static void print_nf_nat_flags(uint32_t
+@@ -664,6 +664,11 @@ static void print_nf_nat_flags(uint32_t
  		delim = ",";
  	}
  
@@ -73,7 +73,7 @@
  	unsigned int			flags;
 --- a/src/scanner.l
 +++ b/src/scanner.l
-@@ -464,6 +464,7 @@ addrstring	({macaddr}|{ip4addr}|{ip6addr
+@@ -466,6 +466,7 @@ addrstring	({macaddr}|{ip4addr}|{ip6addr
  "random"		{ return RANDOM; }
  <SCANSTATE_STMT_NAT>{
  	"fully-random"		{ return FULLY_RANDOM; }
