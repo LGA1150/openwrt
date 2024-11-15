@@ -101,6 +101,18 @@
 	nvmem-cell-names = "mac-address";
 };
 
+&gmac1 {
+	status = "disabled";
+	nvmem-cells = <&macaddr_factory_e000>;
+	nvmem-cell-names = "mac-address";
+
+	fixed-link {
+		speed = <1000>;
+		full-duplex;
+		pause;
+	};
+};
+
 &switch0 {
 	ports {
 		port@1 {
@@ -118,6 +130,10 @@
 		port@3 {
 			status = "okay";
 			label = "lan1";
+		};
+
+		port@5 {
+			status = "disabled";
 		};
 	};
 };
