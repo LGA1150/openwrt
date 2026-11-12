@@ -1,0 +1,48 @@
+From: Qingfang Deng <dqfext@gmail.com>
+Subject: [PATCH] mwlwifi: exclude QoS Null frames from 8864 TX aggregation
+
+mac80211 client probes use QoS Null frames with normal ACK policy and
+intentionally bypass A-MPDU processing. The 8864 transmit path includes
+these frames in its aggregation stream lookup. If a stream for the same
+station and TID is active, the Block Ack assertion fires and the probe
+is dropped.
+
+Exclude QoS Null frames from aggregation handling so they use the
+normal transmit queue and ACK policy. Also avoid reading an LLC/SNAP
+EtherType from frames that have no data payload.
+
+Signed-off-by: Qingfang Deng <dqfext@gmail.com>
+---
+diff --git a/hif/pcie/8864/tx.c b/hif/pcie/8864/tx.c
+index 1e225fa..b49ac3e 100644
+--- a/hif/pcie/8864/tx.c
++++ b/hif/pcie/8864/tx.c
+@@ -659,11 +659,13 @@ void pcie_8864_tx_xmit(struct ieee80211_hw *hw,
+ 		u16 pkt_type;
+ 		struct mwl_sta *sta_info;
+ 
+-		pkt_type = be16_to_cpu(*((__be16 *)
+-			&skb->data[ieee80211_hdrlen(wh->frame_control) + 6]));
+-		if (pkt_type == ETH_P_PAE) {
+-			index = IEEE80211_AC_VO;
+-			eapol_frame = true;
++		if (ieee80211_is_data_present(wh->frame_control)) {
++			pkt_type = be16_to_cpu(*((__be16 *)
++				&skb->data[ieee80211_hdrlen(wh->frame_control) + 6]));
++			if (pkt_type == ETH_P_PAE) {
++				index = IEEE80211_AC_VO;
++				eapol_frame = true;
++			}
+ 		}
+ 		if (sta) {
+ 			if (mwl_vif->is_hw_crypto_enabled) {
+@@ -732,7 +734,8 @@ void pcie_8864_tx_xmit(struct ieee80211_hw *hw,
+ 
+ 	if (sta && sta->deflink.ht_cap.ht_supported &&
+ 	  !(xmitcontrol & EAGLE_TXD_XMITCTRL_USE_MC_RATE) &&
+-	    ieee80211_is_data_qos(wh->frame_control)) {
++	    ieee80211_is_data_qos(wh->frame_control) &&
++	    !ieee80211_is_qos_nullfunc(wh->frame_control)) {
+ 		tid = qos & 0xf;
+ 		pcie_tx_count_packet(sta, tid);
+ 
